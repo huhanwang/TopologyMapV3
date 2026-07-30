@@ -13,6 +13,14 @@ public:
         int min_unconfirmed_short_final_ft_samples = 4;
         double max_unconfirmed_narrow_ribbon_width_m = 1.8;
         double max_replacement_ribbon_width_m = 5.5;
+        double near_node_distance_m = 0.5;
+        double min_stable_ribbon_width_m = 2.7;
+        double max_stable_ribbon_width_m = 4.8;
+        double max_corridor_support_width_m = 7.0;
+        double max_support_width_span_m = 0.75;
+        double min_passive_support_length_m = 20.0;
+        double max_repair_extrapolation_m = 35.0;
+        int max_repair_iterations = 80;
     };
 
     FrenetSliceGraphOutput build(

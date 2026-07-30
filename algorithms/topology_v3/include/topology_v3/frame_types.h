@@ -287,6 +287,9 @@ struct FrenetSliceGraphNode {
     std::string provenance;
     std::string reason;
     std::string semantic_type;
+    std::uint64_t reconstruction_support_node_id = 0;
+    bool reconstruction_support_is_left = false;
+    double reconstruction_width_m = 0.0;
 };
 
 struct FrenetSliceGraphLonLink {
@@ -337,6 +340,11 @@ struct FrenetSliceGraphOutput {
     std::vector<FrenetSliceGraphLatLink> lat_links;
     std::vector<SliceRibbonCell> slice_ribbons;
     std::vector<RibbonTransitionEvidence> transitions;
+    int observed_node_count = 0;
+    int inferred_node_count = 0;
+    int observed_lon_link_count = 0;
+    int inferred_lon_link_count = 0;
+    int near_topology_link_count = 0;
 };
 
 struct RawRibbonRelation {

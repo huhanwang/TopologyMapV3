@@ -655,6 +655,77 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"passive_boundary_count", result.passive_boundary_count},
             {"decisions", std::move(decisions)}};
     };
+    const auto frenetSliceGraphToJson = [](const auto& result) {
+        Json nodes = Json::array();
+        for (const auto& node : result.nodes) {
+            nodes.push_back({
+                {"node_id", node.node_id},
+                {"raw_ft_id", node.raw_ft_id},
+                {"final_ft_id", node.final_ft_id},
+                {"debug_label", node.debug_label},
+                {"slice_index", node.slice_index},
+                {"s_m", node.s_m},
+                {"l_m", node.l_m},
+                {"state", node.state},
+                {"provenance", node.provenance},
+                {"reason", node.reason},
+                {"semantic_type", node.semantic_type},
+                {"reconstruction_support_node_id", node.reconstruction_support_node_id},
+                {"reconstruction_support_is_left", node.reconstruction_support_is_left},
+                {"reconstruction_width_m", node.reconstruction_width_m}});
+        }
+        Json lon_links = Json::array();
+        for (const auto& link : result.lon_links) {
+            lon_links.push_back({
+                {"link_id", link.link_id},
+                {"from_node_id", link.from_node_id},
+                {"to_node_id", link.to_node_id},
+                {"kind", link.kind},
+                {"active", link.active},
+                {"score", link.score},
+                {"reason", link.reason}});
+        }
+        Json lat_links = Json::array();
+        for (const auto& link : result.lat_links) {
+            lat_links.push_back({
+                {"link_id", link.link_id},
+                {"right_node_id", link.right_node_id},
+                {"left_node_id", link.left_node_id},
+                {"slice_index", link.slice_index},
+                {"s_m", link.s_m},
+                {"width_m", link.width_m},
+                {"active", link.active},
+                {"reason", link.reason}});
+        }
+        Json slice_ribbons = Json::array();
+        for (const auto& ribbon : result.slice_ribbons) {
+            slice_ribbons.push_back({
+                {"ribbon_id", ribbon.ribbon_id},
+                {"slice_index", ribbon.slice_index},
+                {"right_node_id", ribbon.right_node_id},
+                {"left_node_id", ribbon.left_node_id},
+                {"s_m", ribbon.s_m},
+                {"width_m", ribbon.width_m},
+                {"center_l_m", ribbon.center_l_m}});
+        }
+        return Json{
+            {"schema_version", "topology-map-v3.frenet-slice-graph.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"node_count", result.nodes.size()},
+            {"observed_node_count", result.observed_node_count},
+            {"inferred_node_count", result.inferred_node_count},
+            {"lon_link_count", result.lon_links.size()},
+            {"observed_lon_link_count", result.observed_lon_link_count},
+            {"inferred_lon_link_count", result.inferred_lon_link_count},
+            {"near_topology_link_count", result.near_topology_link_count},
+            {"lat_link_count", result.lat_links.size()},
+            {"slice_ribbon_count", result.slice_ribbons.size()},
+            {"nodes", std::move(nodes)},
+            {"lon_links", std::move(lon_links)},
+            {"lat_links", std::move(lat_links)},
+            {"slice_ribbons", std::move(slice_ribbons)}};
+    };
     const auto boundaryColor = [](const std::string& semantic_type) {
         if (semantic_type == "curb") return "#eb5757";
         if (semantic_type == "road_edge") return "#f2994a";
@@ -925,6 +996,66 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
+    const auto frenetSliceGraphLayer = [](
+                                            const auto& result) {
+        Json layer = {
+            {"id", "frenet_slice_graph"},
+            {"name", "Frenet slice graph"},
+            {"visible", false},
+            {"modes", {"frenet"}},
+            {"items", Json::array()}};
+        if (!result.ok) return layer;
+
+        std::map<std::uint64_t, const topology_map::topology_v3::FrenetSliceGraphNode*> nodes;
+        for (const auto& node : result.nodes) nodes[node.node_id] = &node;
+        const auto nodePoint = [&](std::uint64_t node_id) {
+            const auto it = nodes.find(node_id);
+            if (it == nodes.end()) return Json{};
+            return Json{{"s_m", it->second->s_m}, {"l_m", it->second->l_m}};
+        };
+        const auto linkColor = [](const std::string& kind) {
+            if (kind == "observed") return "#2d9cdb";
+            if (kind == "inferred") return "#f2c94c";
+            if (kind == "near_topology") return "#eb5757";
+            return "#9aa4ad";
+        };
+        for (const auto& link : result.lon_links) {
+            if (!link.active) continue;
+            const auto from_it = nodes.find(link.from_node_id);
+            const auto to_it = nodes.find(link.to_node_id);
+            if (from_it == nodes.end() || to_it == nodes.end()) continue;
+            layer["items"].push_back({
+                {"type", "polyline"},
+                {"id", "frenet_slice_graph_lon_" + std::to_string(link.link_id)},
+                {"name", link.kind},
+                {"points", Json::array({nodePoint(link.from_node_id), nodePoint(link.to_node_id)})},
+                {"style", {
+                    {"color", linkColor(link.kind)},
+                    {"width", link.kind == "near_topology" ? 0.16 : 0.11},
+                    {"dash", link.kind != "observed"}}},
+                {"properties", {
+                    {"source", "frenet_slice_graph_builder"},
+                    {"kind", link.kind},
+                    {"reason", link.reason},
+                    {"from_node_id", link.from_node_id},
+                    {"to_node_id", link.to_node_id}}}});
+        }
+        Json inferred_points = Json::array();
+        for (const auto& node : result.nodes) {
+            if (node.state != "inferred") continue;
+            inferred_points.push_back({{"s_m", node.s_m}, {"l_m", node.l_m}});
+        }
+        if (!inferred_points.empty()) {
+            layer["items"].push_back({
+                {"type", "points"},
+                {"id", "frenet_slice_graph_inferred_nodes"},
+                {"name", "Inferred nodes"},
+                {"points", std::move(inferred_points)},
+                {"style", {{"color", "#f2c94c"}, {"radius_px", 4.0}}},
+                {"properties", {{"source", "frenet_slice_graph_builder"}}}});
+        }
+        return layer;
+    };
     return {
         {"frame_id", input.frame_id},
         {"timestamp_us", input.timestamp_us},
@@ -942,6 +1073,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"frenet_slice_intersections",
          frenetSliceIntersectionsToJson(output.frenet_slice_intersections)},
         {"raw_ft_filter", rawFtFilterToJson(output.raw_ft_filter)},
+        {"frenet_slice_graph", frenetSliceGraphToJson(output.frenet_slice_graph)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),
@@ -949,7 +1081,8 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                         rawBoundaryEvidenceLayer(output.raw_boundary_evidence),
                         frenetSliceIntersectionsLayer(output.frenet_slice_intersections),
                         rawFtFilterLayer(output.raw_ft_filter,
-                                         output.frenet_slice_intersections)}},
+                                         output.frenet_slice_intersections),
+                        frenetSliceGraphLayer(output.frenet_slice_graph)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};
 }
