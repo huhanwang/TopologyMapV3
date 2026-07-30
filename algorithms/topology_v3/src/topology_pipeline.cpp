@@ -10,6 +10,8 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         navigation_reference_builder_.build(input, output.visual_reference);
     output.fused_reference =
         fused_reference_builder_.build(output.visual_reference, output.navigation_reference);
+    output.raw_boundary_evidence =
+        raw_boundary_evidence_builder_.build(input, output.fused_reference);
 
     output.debug_layers.push_back({
         "visual_reference",
@@ -29,6 +31,12 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         output.fused_reference.ok,
         {output.fused_reference.ok ? "fused reference generated"
                                    : output.fused_reference.error}});
+    output.debug_layers.push_back({
+        "raw_boundary_evidence",
+        "raw_boundary_evidence",
+        output.raw_boundary_evidence.ok,
+        {output.raw_boundary_evidence.ok ? "raw boundary evidence generated"
+                                         : output.raw_boundary_evidence.error}});
     return output;
 }
 

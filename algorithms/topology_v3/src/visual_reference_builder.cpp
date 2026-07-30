@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <tuple>
 
@@ -136,6 +137,25 @@ std::optional<VisualCandidate> pairReference(
     const double overlap_start = std::max(left.s_range.first, right.s_range.first);
     const double overlap_end = std::min(left.s_range.second, right.s_range.second);
     if (overlap_end - overlap_start < cfg.min_reference_length_m) return std::nullopt;
+    double min_width = std::numeric_limits<double>::infinity();
+    double max_width = -std::numeric_limits<double>::infinity();
+    int sample_count = 0;
+    int invalid_count = 0;
+    const double step = std::max(1e-6, cfg.pair_width_sample_step_m);
+    for (double x = overlap_start; x <= overlap_end + 1e-6; x += step) {
+        const double width = polyValue(left.line->coeffs, x) - polyValue(right.line->coeffs, x);
+        if (!std::isfinite(width)) return std::nullopt;
+        min_width = std::min(min_width, width);
+        max_width = std::max(max_width, width);
+        if (width < cfg.min_pair_width_m || width > cfg.max_pair_width_m) ++invalid_count;
+        ++sample_count;
+    }
+    if (sample_count == 0) return std::nullopt;
+    if (min_width <= 0.0) return std::nullopt;
+    if (max_width - min_width > cfg.max_pair_width_span_m) return std::nullopt;
+    if (static_cast<double>(invalid_count) / sample_count > cfg.max_pair_invalid_width_ratio) {
+        return std::nullopt;
+    }
     VisualCandidate candidate;
     candidate.left = &left;
     candidate.right = &right;

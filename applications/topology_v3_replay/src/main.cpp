@@ -518,6 +518,52 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"fused_end_x_m", result.fused_end_x_m},
             {"points", std::move(points)}};
     };
+    const auto rawBoundaryEvidenceToJson = [](const auto& result) {
+        Json boundaries = Json::array();
+        std::size_t sample_count = 0;
+        for (const auto& boundary : result.boundaries) {
+            Json samples = Json::array();
+            for (const auto& sample : boundary.samples) {
+                Json point = {
+                    {"id", sample.id},
+                    {"s_m", sample.s_m},
+                    {"l_m", sample.l_m},
+                    {"x_vcs_m", sample.x_vcs_m},
+                    {"y_vcs_m", sample.y_vcs_m},
+                    {"confidence", sample.confidence},
+                    {"source_line_id", sample.source_line_id},
+                    {"track_line_id", sample.track_line_id},
+                    {"semantic_type", sample.semantic_type}};
+                if (std::isfinite(sample.x_smooth_m) && std::isfinite(sample.y_smooth_m)) {
+                    point["x_smooth_m"] = sample.x_smooth_m;
+                    point["y_smooth_m"] = sample.y_smooth_m;
+                }
+                samples.push_back(std::move(point));
+            }
+            sample_count += boundary.samples.size();
+            boundaries.push_back({
+                {"observation_id", boundary.observation_id},
+                {"debug_label", boundary.debug_label},
+                {"semantic_type", boundary.semantic_type},
+                {"quality", boundary.quality},
+                {"source_identity_ids", boundary.source_identity_ids},
+                {"sample_count", boundary.samples.size()},
+                {"samples", std::move(samples)}});
+        }
+        return Json{
+            {"schema_version", "topology-map-v3.raw-boundary-evidence.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"boundary_count", result.boundaries.size()},
+            {"sample_count", sample_count},
+            {"boundaries", std::move(boundaries)}};
+    };
+    const auto boundaryColor = [](const std::string& semantic_type) {
+        if (semantic_type == "curb") return "#eb5757";
+        if (semantic_type == "road_edge") return "#f2994a";
+        if (semantic_type == "stopline") return "#56ccf2";
+        return "#dfe6e9";
+    };
     const auto visualReferenceLayer = [](const auto& result) {
         Json layer = {{"id", "visual_reference"}, {"name", "Visual reference"},
                       {"visible", true}, {"items", Json::array()}};
@@ -582,6 +628,47 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                 {"overlap_length_m", result.overlap_length_m}}}});
         return layer;
     };
+    const auto rawBoundaryEvidenceLayer = [&boundaryColor](const auto& result) {
+        Json layer = {
+            {"id", "raw_boundary_evidence"},
+            {"name", "Raw boundary evidence"},
+            {"visible", true},
+            {"modes", {"vcs", "smooth", "frenet"}},
+            {"items", Json::array()}};
+        if (!result.ok) return layer;
+        for (const auto& boundary : result.boundaries) {
+            if (boundary.samples.size() < 2) continue;
+            Json points = Json::array();
+            for (const auto& sample : boundary.samples) {
+                Json point = {
+                    {"s_m", sample.s_m},
+                    {"l_m", sample.l_m},
+                    {"x_vcs_m", sample.x_vcs_m},
+                    {"y_vcs_m", sample.y_vcs_m}};
+                if (std::isfinite(sample.x_smooth_m) && std::isfinite(sample.y_smooth_m)) {
+                    point["x_smooth_m"] = sample.x_smooth_m;
+                    point["y_smooth_m"] = sample.y_smooth_m;
+                }
+                points.push_back(std::move(point));
+            }
+            layer["items"].push_back({
+                {"type", "polyline"},
+                {"id", "raw_boundary_evidence_" + std::to_string(boundary.observation_id)},
+                {"name", boundary.debug_label.empty() ? std::to_string(boundary.observation_id)
+                                                       : boundary.debug_label},
+                {"points", std::move(points)},
+                {"style", {
+                    {"color", boundaryColor(boundary.semantic_type)},
+                    {"width", 0.08},
+                    {"dash", false}}},
+                {"properties", {
+                    {"source", "raw_boundary_evidence_builder"},
+                    {"semantic_type", boundary.semantic_type},
+                    {"quality", boundary.quality},
+                    {"sample_count", boundary.samples.size()}}}});
+        }
+        return layer;
+    };
     return {
         {"frame_id", input.frame_id},
         {"timestamp_us", input.timestamp_us},
@@ -594,9 +681,11 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"visual_reference", visualReferenceToJson(output.visual_reference)},
         {"navigation_reference", navigationReferenceToJson(output.navigation_reference)},
         {"fused_reference", fusedReferenceToJson(output.fused_reference)},
+        {"raw_boundary_evidence", rawBoundaryEvidenceToJson(output.raw_boundary_evidence)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
-                        fusedReferenceLayer(output.fused_reference)}},
+                        fusedReferenceLayer(output.fused_reference),
+                        rawBoundaryEvidenceLayer(output.raw_boundary_evidence)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};
 }

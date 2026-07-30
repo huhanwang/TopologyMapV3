@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstddef>
+#include <string>
+
 #include "topology_v3/frame_types.h"
 
 namespace topology_map::topology_v3 {
@@ -7,9 +10,9 @@ namespace topology_map::topology_v3 {
 class RawBoundaryEvidenceBuilder {
 public:
     struct Config {
-        double sample_spacing_m = 2.0;
+        std::string preferred_source = "vehicle_bev_lanes";
         double max_abs_l_m = 35.0;
-        double half_length_m = 40.0;
+        std::size_t min_sample_count = 2;
     };
 
     RawBoundaryEvidenceOutput build(

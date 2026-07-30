@@ -161,6 +161,7 @@ struct FrenetSamplePoint {
 
 struct RawBoundaryEvidence {
     std::uint64_t observation_id = 0;
+    std::string debug_label;
     std::vector<FrenetSamplePoint> samples;
     std::vector<std::string> source_identity_ids;
     std::string semantic_type;
