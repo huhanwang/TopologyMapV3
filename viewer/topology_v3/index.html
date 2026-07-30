@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Topology V3 Viewer</title>
+    <link rel="stylesheet" href="./styles.css?v=v3_smooth_modes_v1" />
+  </head>
+  <body>
+    <main>
+      <aside>
+        <h1>Topology V3</h1>
+        <p id="datasetMeta">未加载数据</p>
+        <label>Dataset Path
+          <input id="datasetPath" value="/out/autofused_1970_2090_v3_replay" />
+        </label>
+        <button id="load">加载</button>
+        <hr />
+        <label>Frame <input id="slider" type="range" min="0" max="0" value="0" /></label>
+        <p id="frameMeta">0 / 0</p>
+        <div class="row">
+          <button id="previous">上一帧</button>
+          <button id="next">下一帧</button>
+        </div>
+        <div class="row">
+          <input id="jump" type="number" placeholder="1997" />
+          <button id="jumpButton">跳转</button>
+        </div>
+        <hr />
+        <div class="modes">
+          <button id="modeVcs" class="active">VCS</button>
+          <button id="modeFrenet">Frenet</button>
+          <button id="modeSmooth">Smooth</button>
+        </div>
+        <hr />
+        <div class="layer-group">
+          <div class="layer-title">Layers</div>
+          <label class="toggle" data-modes="vcs smooth"><input id="showVisualLanes" type="checkbox" checked /> Visual Lane Lines (raw input)</label>
+          <label class="toggle" data-modes="vcs"><input id="showVisualReference" type="checkbox" checked /> Visual References</label>
+          <label class="toggle" data-modes="vcs"><input id="showNavigationReference" type="checkbox" checked /> Navigation References</label>
+        </div>
+        <div id="dynamicLayers" class="layer-group"></div>
+        <div class="layer-group">
+          <div class="layer-title">Display</div>
+          <label class="toggle"><input id="showLabels" type="checkbox" checked /> Labels</label>
+          <label class="toggle"><input id="showPoints" type="checkbox" /> Sample points</label>
+          <label class="toggle"><input id="showGrid" type="checkbox" checked /> Grid and coordinate ticks</label>
+          <label class="toggle"><input id="showAutoFit" type="checkbox" checked /> Auto-fit coordinates</label>
+        </div>
+        <button id="fit">Fit current mode</button>
+        <hr />
+        <pre id="info"></pre>
+      </aside>
+      <section>
+        <canvas id="canvas"></canvas>
+        <div id="notice">V3: VCS / Frenet / Smooth</div>
+      </section>
+    </main>
+    <script src="./viewer.js?v=v3_smooth_modes_v1"></script>
+  </body>
+</html>

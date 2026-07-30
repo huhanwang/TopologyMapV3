@@ -1,0 +1,8 @@
+add_library(topology_v3_core STATIC
+    src/fused_reference_builder.cpp
+    src/navigation_reference_builder.cpp
+    src/topology_pipeline.cpp
+    src/visual_reference_builder.cpp
+)
+
+target_include_directories(topology_v3_core PUBLIC include)

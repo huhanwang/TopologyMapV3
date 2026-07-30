@@ -1,0 +1,23 @@
+{
+  "replay": {
+    "source": {
+      "type": "db",
+      "path": "/media/edward/MAPLOC/Data/DB/noa/byd-han/06/0601/rtk路段/apa_t68g_datatypev1.0.50-26-06-01-20-31-29.db"
+    },
+    "main_axis": {
+      "topic": "AutoFusedBevRoadGeometry",
+      "time_type": "raw_timestamp",
+      "range": {"type": "frame", "start": 1970, "end": 2090}
+    },
+    "sync": {"mode": "previous_or_equal"},
+    "topics": ["AutoFusedBevRoadGeometry", "AutoSensorGnss", "AutoSDRoute"]
+  },
+  "output": {
+    "dir": "../../../out/autofused_1970_2090_v3_replay",
+    "frame_dir_width": 10,
+    "write_files": ["frame", "sync", "topology_v3_debug"]
+  },
+  "debug": {
+    "layers": ["visual_reference", "navigation_reference", "fused_reference"]
+  }
+}
