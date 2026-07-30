@@ -18,8 +18,7 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         frenet_slice_intersection_builder_.build(output.raw_visual_preprocess,
                                                  output.fused_reference,
                                                  input.smooth_pose ? &*input.smooth_pose : nullptr);
-    output.raw_ribbon_graph =
-        raw_ribbon_graph_builder_.build(output.raw_boundary_evidence);
+    output.raw_ft_filter = raw_ft_filter_builder_.build(output.frenet_slice_intersections);
 
     output.debug_layers.push_back({
         "visual_reference",
@@ -58,11 +57,11 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         {output.frenet_slice_intersections.ok ? "frenet slice intersections generated"
                                               : output.frenet_slice_intersections.error}});
     output.debug_layers.push_back({
-        "raw_ribbon_graph",
-        "raw_ribbon_graph",
-        output.raw_ribbon_graph.ok,
-        {output.raw_ribbon_graph.ok ? "raw ribbon graph generated"
-                                    : output.raw_ribbon_graph.error}});
+        "raw_ft_filter",
+        "raw_ft_filter",
+        output.raw_ft_filter.ok,
+        {output.raw_ft_filter.ok ? "raw FT filter generated"
+                                 : output.raw_ft_filter.error}});
     return output;
 }
 

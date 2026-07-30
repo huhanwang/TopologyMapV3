@@ -631,43 +631,29 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"node_count", result.node_count},
             {"slices", std::move(slices)}};
     };
-    const auto rawRibbonGraphToJson = [](const auto& result) {
-        Json relations = Json::array();
-        for (const auto& relation : result.lateral_relations) {
-            relations.push_back({
-                {"relation_id", relation.relation_id},
-                {"right_observation_id", relation.right_observation_id},
-                {"left_observation_id", relation.left_observation_id},
-                {"right_debug_label", relation.right_debug_label},
-                {"left_debug_label", relation.left_debug_label},
-                {"s_begin_m", relation.s_begin_m},
-                {"s_end_m", relation.s_end_m},
-                {"profile_type", relation.profile_type},
-                {"width_begin_m", relation.width_begin_m},
-                {"width_end_m", relation.width_end_m},
-                {"width_min_m", relation.width_min_m},
-                {"width_max_m", relation.width_max_m},
-                {"width_median_m", relation.width_median_m},
-                {"width_mad_m", relation.width_mad_m},
-                {"max_local_width_delta_m", relation.max_local_width_delta_m},
-                {"monotonic_ratio", relation.monotonic_ratio},
-                {"stable_ratio", relation.stable_ratio},
-                {"valid_length_m", relation.valid_length_m},
-                {"sample_count", relation.sample_count},
-                {"valid_sample_count", relation.valid_sample_count},
-                {"sample_s_m", relation.sample_s_m},
-                {"sample_right_l_m", relation.sample_right_l_m},
-                {"sample_left_l_m", relation.sample_left_l_m},
-                {"sample_width_m", relation.sample_width_m},
-                {"propagation_eligible", relation.propagation_eligible},
-                {"rejection_reasons", relation.rejection_reasons}});
+    const auto rawFtFilterToJson = [](const auto& result) {
+        Json decisions = Json::array();
+        for (const auto& decision : result.decisions) {
+            decisions.push_back({
+                {"raw_ft_id", decision.raw_ft_id},
+                {"debug_label", decision.debug_label},
+                {"state", decision.state},
+                {"reason", decision.reason},
+                {"direct_topology_candidate", decision.direct_topology_candidate},
+                {"passive_boundary", decision.passive_boundary},
+                {"sample_count", decision.sample_count},
+                {"support_length_m", decision.support_length_m}});
         }
         return Json{
-            {"schema_version", "topology-map-v3.raw-ribbon-graph.v1"},
+            {"schema_version", "topology-map-v3.raw-ft-filter.v1"},
             {"ok", result.ok},
             {"error", result.error},
-            {"relation_count", result.lateral_relations.size()},
-            {"relations", std::move(relations)}};
+            {"decision_count", result.decisions.size()},
+            {"kept_count", result.kept_count},
+            {"pending_count", result.pending_count},
+            {"suppressed_count", result.suppressed_count},
+            {"passive_boundary_count", result.passive_boundary_count},
+            {"decisions", std::move(decisions)}};
     };
     const auto boundaryColor = [](const std::string& semantic_type) {
         if (semantic_type == "curb") return "#eb5757";
@@ -675,12 +661,11 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         if (semantic_type == "stopline") return "#56ccf2";
         return "#dfe6e9";
     };
-    const auto ribbonColor = [](const std::string& profile_type) {
-        if (profile_type == "stable") return "#27ae60";
-        if (profile_type == "opening") return "#f2c94c";
-        if (profile_type == "closing") return "#f2994a";
-        if (profile_type == "too_narrow") return "#eb5757";
-        if (profile_type == "too_wide") return "#9b51e0";
+    const auto rawFtStateColor = [](const std::string& state) {
+        if (state == "kept") return "#27ae60";
+        if (state == "pending") return "#f2c94c";
+        if (state == "suppressed") return "#ff3b30";
+        if (state == "passive_boundary") return "#f2994a";
         return "#828b94";
     };
     const auto visualReferenceLayer = [](const auto& result) {
@@ -895,49 +880,60 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
-    const auto rawRibbonGraphLayer = [&ribbonColor](const auto& result) {
+    const auto rawFtFilterLayer = [&rawFtStateColor](
+                                      const auto& result,
+                                      const auto& intersections) {
         Json layer = {
-            {"id", "raw_ribbon_graph"},
-            {"name", "Raw ribbon graph"},
-            {"visible", true},
+            {"id", "raw_ft_filter"},
+            {"name", "Raw FT filter"},
+            {"visible", false},
             {"modes", {"frenet"}},
             {"items", Json::array()}};
-        if (!result.ok) return layer;
-        for (const auto& relation : result.lateral_relations) {
-            if (relation.sample_s_m.size() < 2 ||
-                relation.sample_right_l_m.size() != relation.sample_s_m.size() ||
-                relation.sample_left_l_m.size() != relation.sample_s_m.size()) {
-                continue;
+        if (!result.ok || !intersections.ok) return layer;
+
+        std::map<std::uint64_t, Json> point_sets;
+        for (const auto& slice : intersections.slices) {
+            for (const auto& node : slice.nodes) {
+                if (point_sets.find(node.raw_ft_id) == point_sets.end()) {
+                    point_sets[node.raw_ft_id] = Json::array();
+                }
+                point_sets[node.raw_ft_id].push_back({{"s_m", node.s_m}, {"l_m", node.l_m}});
             }
-            Json right_points = Json::array();
-            Json left_points = Json::array();
-            for (std::size_t i = 0; i < relation.sample_s_m.size(); ++i) {
-                right_points.push_back({{"s_m", relation.sample_s_m[i]},
-                                        {"l_m", relation.sample_right_l_m[i]}});
-                left_points.push_back({{"s_m", relation.sample_s_m[i]},
-                                       {"l_m", relation.sample_left_l_m[i]}});
-            }
-            const std::string color = ribbonColor(relation.profile_type);
+        }
+
+        for (const auto& decision : result.decisions) {
+            auto it = point_sets.find(decision.raw_ft_id);
+            if (it == point_sets.end() || it->second.empty()) continue;
+            Json points = it->second;
+            Json point_items = points;
+            const std::string color = rawFtStateColor(decision.state);
             layer["items"].push_back({
-                {"type", "ribbon"},
-                {"id", "raw_ribbon_" + std::to_string(relation.relation_id)},
-                {"name", relation.right_debug_label + "-" + relation.left_debug_label + " " +
-                         relation.profile_type},
-                {"right_points", std::move(right_points)},
-                {"left_points", std::move(left_points)},
-                {"style", {{"color", color}, {"fill", color}, {"width", 0.04}, {"alpha", 0.20}}},
+                {"type", "polyline"},
+                {"id", "raw_ft_filter_" + std::to_string(decision.raw_ft_id)},
+                {"name", decision.debug_label + " " + decision.state},
+                {"points", std::move(points)},
+                {"style", {
+                    {"color", color},
+                    {"width", decision.state == "suppressed" ? 0.13 : 0.10},
+                    {"dash", decision.state != "kept"}}},
                 {"properties", {
-                    {"source", "raw_ribbon_graph_builder"},
-                    {"right_debug_label", relation.right_debug_label},
-                    {"left_debug_label", relation.left_debug_label},
-                    {"profile_type", relation.profile_type},
-                    {"width_median_m", relation.width_median_m},
-                    {"width_min_m", relation.width_min_m},
-                    {"width_max_m", relation.width_max_m},
-                    {"stable_ratio", relation.stable_ratio},
-                    {"monotonic_ratio", relation.monotonic_ratio},
-                    {"propagation_eligible", relation.propagation_eligible},
-                    {"rejection_reasons", relation.rejection_reasons}}}});
+                    {"source", "raw_ft_filter_builder"},
+                    {"raw_ft_id", decision.raw_ft_id},
+                    {"state", decision.state},
+                    {"reason", decision.reason},
+                    {"sample_count", decision.sample_count},
+                    {"support_length_m", decision.support_length_m}}}});
+            layer["items"].push_back({
+                {"type", "points"},
+                {"id", "raw_ft_filter_points_" + std::to_string(decision.raw_ft_id)},
+                {"name", decision.debug_label + " " + decision.state + " nodes"},
+                {"points", std::move(point_items)},
+                {"style", {{"color", color}, {"radius_px", 3.4}}},
+                {"properties", {
+                    {"source", "raw_ft_filter_builder"},
+                    {"raw_ft_id", decision.raw_ft_id},
+                    {"state", decision.state},
+                    {"reason", decision.reason}}}});
         }
         return layer;
     };
@@ -957,14 +953,15 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"raw_boundary_evidence", rawBoundaryEvidenceToJson(output.raw_boundary_evidence)},
         {"frenet_slice_intersections",
          frenetSliceIntersectionsToJson(output.frenet_slice_intersections)},
-        {"raw_ribbon_graph", rawRibbonGraphToJson(output.raw_ribbon_graph)},
+        {"raw_ft_filter", rawFtFilterToJson(output.raw_ft_filter)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),
                         rawVisualPreprocessLayer(output.raw_visual_preprocess),
                         rawBoundaryEvidenceLayer(output.raw_boundary_evidence),
                         frenetSliceIntersectionsLayer(output.frenet_slice_intersections),
-                        rawRibbonGraphLayer(output.raw_ribbon_graph)}},
+                        rawFtFilterLayer(output.raw_ft_filter,
+                                         output.frenet_slice_intersections)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};
 }

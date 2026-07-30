@@ -158,7 +158,7 @@ function layerVisibleInCurrentMode(layer) {
   if (layer.id === "navigation_reference") return controlVisibleInCurrentMode(el.navigationReference.closest("[data-modes]"));
   if (layer.id === "fused_reference") return state.mode === "vcs";
   if (layer.id === "raw_boundary_evidence") return state.mode === "frenet";
-  if (layer.id === "raw_ribbon_graph") return state.mode === "frenet";
+  if (layer.id === "raw_ft_filter") return state.mode === "frenet";
   if (!layer.modes && !layer.data_modes) return true;
   const modes = Array.isArray(layer.modes) ? layer.modes : String(layer.data_modes || "").split(/\s+/);
   return modes.includes(state.mode);
@@ -189,7 +189,7 @@ function updateDynamicLayers() {
       label.dataset.modes = "vcs";
     } else if (layer.id === "raw_boundary_evidence") {
       label.dataset.modes = "frenet";
-    } else if (layer.id === "raw_ribbon_graph") {
+    } else if (layer.id === "raw_ft_filter") {
       label.dataset.modes = "frenet";
     } else if (Array.isArray(layer.modes)) {
       label.dataset.modes = layer.modes.join(" ");

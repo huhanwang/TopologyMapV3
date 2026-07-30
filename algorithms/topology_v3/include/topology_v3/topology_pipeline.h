@@ -14,7 +14,6 @@
 #include "topology_v3/stages/lonlink_repairer.h"
 #include "topology_v3/stages/navigation_reference_builder.h"
 #include "topology_v3/stages/raw_boundary_evidence_builder.h"
-#include "topology_v3/stages/raw_ribbon_graph_builder.h"
 #include "topology_v3/stages/single_frame_propagator.h"
 #include "topology_v3/stages/smooth_topology/smooth_topology_tracker.h"
 #include "topology_v3/stages/visual_reference_builder.h"
@@ -37,8 +36,6 @@ private:
     RawFtAssociationBuilder raw_ft_association_builder_;
     FrenetSliceGraphBuilder frenet_slice_graph_builder_;
     RibbonProfileCompiler ribbon_profile_compiler_;
-    // Temporary profile-only implementation kept until FrenetSliceGraphBuilder is live.
-    RawRibbonGraphBuilder raw_ribbon_graph_builder_;
     LonLinkRepairer lonlink_repairer_;
     KeySliceGraphBuilder key_slice_graph_builder_;
     JunctionEvidenceCompiler junction_evidence_compiler_;

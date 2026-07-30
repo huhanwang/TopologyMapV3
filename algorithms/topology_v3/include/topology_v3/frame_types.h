@@ -499,7 +499,6 @@ struct TopologyFrameOutput {
     RawFtFilterOutput raw_ft_filter;
     RawFtAssociationOutput raw_ft_association;
     FrenetSliceGraphOutput frenet_slice_graph;
-    RawRibbonGraphOutput raw_ribbon_graph;
     LonLinkRepairOutput lonlink_repair;
     KeySliceGraphOutput key_slice_graph;
     JunctionEvidenceOutput junction_evidence;
