@@ -558,6 +558,44 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"sample_count", sample_count},
             {"boundaries", std::move(boundaries)}};
     };
+    const auto rawRibbonGraphToJson = [](const auto& result) {
+        Json relations = Json::array();
+        for (const auto& relation : result.lateral_relations) {
+            relations.push_back({
+                {"relation_id", relation.relation_id},
+                {"right_observation_id", relation.right_observation_id},
+                {"left_observation_id", relation.left_observation_id},
+                {"right_debug_label", relation.right_debug_label},
+                {"left_debug_label", relation.left_debug_label},
+                {"s_begin_m", relation.s_begin_m},
+                {"s_end_m", relation.s_end_m},
+                {"profile_type", relation.profile_type},
+                {"width_begin_m", relation.width_begin_m},
+                {"width_end_m", relation.width_end_m},
+                {"width_min_m", relation.width_min_m},
+                {"width_max_m", relation.width_max_m},
+                {"width_median_m", relation.width_median_m},
+                {"width_mad_m", relation.width_mad_m},
+                {"max_local_width_delta_m", relation.max_local_width_delta_m},
+                {"monotonic_ratio", relation.monotonic_ratio},
+                {"stable_ratio", relation.stable_ratio},
+                {"valid_length_m", relation.valid_length_m},
+                {"sample_count", relation.sample_count},
+                {"valid_sample_count", relation.valid_sample_count},
+                {"sample_s_m", relation.sample_s_m},
+                {"sample_right_l_m", relation.sample_right_l_m},
+                {"sample_left_l_m", relation.sample_left_l_m},
+                {"sample_width_m", relation.sample_width_m},
+                {"propagation_eligible", relation.propagation_eligible},
+                {"rejection_reasons", relation.rejection_reasons}});
+        }
+        return Json{
+            {"schema_version", "topology-map-v3.raw-ribbon-graph.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"relation_count", result.lateral_relations.size()},
+            {"relations", std::move(relations)}};
+    };
     const auto boundaryColor = [](const std::string& semantic_type) {
         if (semantic_type == "curb") return "#eb5757";
         if (semantic_type == "road_edge") return "#f2994a";
@@ -608,7 +646,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
     };
     const auto fusedReferenceLayer = [](const auto& result) {
         Json layer = {{"id", "fused_reference"}, {"name", "Fused reference"},
-                      {"visible", true}, {"items", Json::array()}};
+                      {"visible", true}, {"modes", {"vcs"}}, {"items", Json::array()}};
         if (!result.ok || result.points.size() < 2) return layer;
         Json points = Json::array();
         for (const auto& point : result.points) points.push_back({point.x_m, point.y_m, 0.0});
@@ -633,7 +671,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"id", "raw_boundary_evidence"},
             {"name", "Raw boundary evidence"},
             {"visible", true},
-            {"modes", {"vcs", "smooth", "frenet"}},
+            {"modes", {"frenet"}},
             {"items", Json::array()}};
         if (!result.ok) return layer;
         for (const auto& boundary : result.boundaries) {
@@ -682,6 +720,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"navigation_reference", navigationReferenceToJson(output.navigation_reference)},
         {"fused_reference", fusedReferenceToJson(output.fused_reference)},
         {"raw_boundary_evidence", rawBoundaryEvidenceToJson(output.raw_boundary_evidence)},
+        {"raw_ribbon_graph", rawRibbonGraphToJson(output.raw_ribbon_graph)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),

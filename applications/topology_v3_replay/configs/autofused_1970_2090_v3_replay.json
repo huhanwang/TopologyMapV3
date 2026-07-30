@@ -18,6 +18,6 @@
     "write_files": ["frame", "sync", "topology_v3_debug"]
   },
   "debug": {
-    "layers": ["visual_reference", "navigation_reference", "fused_reference", "raw_boundary_evidence"]
+    "layers": ["visual_reference", "navigation_reference", "fused_reference", "raw_boundary_evidence", "raw_ribbon_graph"]
   }
 }

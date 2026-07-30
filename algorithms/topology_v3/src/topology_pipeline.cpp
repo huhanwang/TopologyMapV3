@@ -12,6 +12,8 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         fused_reference_builder_.build(output.visual_reference, output.navigation_reference);
     output.raw_boundary_evidence =
         raw_boundary_evidence_builder_.build(input, output.fused_reference);
+    output.raw_ribbon_graph =
+        raw_ribbon_graph_builder_.build(output.raw_boundary_evidence);
 
     output.debug_layers.push_back({
         "visual_reference",
@@ -37,6 +39,12 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         output.raw_boundary_evidence.ok,
         {output.raw_boundary_evidence.ok ? "raw boundary evidence generated"
                                          : output.raw_boundary_evidence.error}});
+    output.debug_layers.push_back({
+        "raw_ribbon_graph",
+        "raw_ribbon_graph",
+        output.raw_ribbon_graph.ok,
+        {output.raw_ribbon_graph.ok ? "raw ribbon graph generated"
+                                    : output.raw_ribbon_graph.error}});
     return output;
 }
 

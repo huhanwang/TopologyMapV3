@@ -28,11 +28,6 @@ BoundaryPoint2d vcsToSmooth(const BoundaryPoint2d& point, const SmoothPoseInput&
             pose.y_m + s * point.x_m + c * point.y_m};
 }
 
-bool sampleOrderIsIncreasing(const RawBoundaryEvidence& boundary) {
-    return boundary.samples.size() < 2 ||
-           boundary.samples.front().s_m <= boundary.samples.back().s_m;
-}
-
 bool hasPreferredSource(const ReplayFrameInput& input, const std::string& source) {
     if (source.empty()) return false;
     return std::any_of(input.visual_boundary_lines.begin(), input.visual_boundary_lines.end(),
@@ -107,9 +102,8 @@ RawBoundaryEvidenceOutput RawBoundaryEvidenceBuilder::build(
         }
 
         if (boundary.samples.size() < cfg_.min_sample_count) continue;
-        if (!sampleOrderIsIncreasing(boundary)) {
-            std::reverse(boundary.samples.begin(), boundary.samples.end());
-        }
+        std::sort(boundary.samples.begin(), boundary.samples.end(),
+                  [](const auto& a, const auto& b) { return a.s_m < b.s_m; });
         output.boundaries.push_back(std::move(boundary));
         ++evidence_index;
     }
