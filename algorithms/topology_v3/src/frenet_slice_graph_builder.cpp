@@ -328,11 +328,26 @@ struct Support {
     bool support_is_left = false;
 };
 
+bool passiveAdjacentLaneLineClear(const GraphWork& graph,
+                                  const FrenetSliceGraphNode& node,
+                                  const FrenetSliceGraphBuilder::Config& cfg) {
+    if (!passiveBoundary(node.semantic_type)) return true;
+    for (std::uint64_t adjacent_id : graph.adjacentNodeIds(node.node_id)) {
+        const auto* adjacent = graph.node(adjacent_id);
+        if (!adjacent || !laneLine(adjacent->semantic_type)) continue;
+        if (std::abs(adjacent->l_m - node.l_m) < cfg.min_passive_repair_width_m) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::vector<Support> adjacentSupports(const GraphWork& graph,
                                       const FrenetSliceGraphNode& node,
                                       bool forward,
                                       const FrenetSliceGraphBuilder::Config& cfg) {
     std::vector<Support> result;
+    if (!passiveAdjacentLaneLineClear(graph, node, cfg)) return result;
     if (node.reconstruction_support_node_id != 0) {
         const auto* inherited = graph.node(node.reconstruction_support_node_id);
         if (inherited && inherited->slice_index == node.slice_index &&
