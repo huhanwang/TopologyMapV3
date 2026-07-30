@@ -49,6 +49,9 @@ Raw FT Association
 Frenet Slice Graph
         |
         v
+Junction Evidence Compiler
+        |
+        v
 Ribbon Profile Compiler
         |
         v
@@ -56,9 +59,6 @@ LonLink Repair
         |
         v
 KeySlice Graph
-        |
-        v
-Junction Evidence Compiler
         |
         v
 Resegmented Boundaries
@@ -323,7 +323,32 @@ Repair stop records must be explicit:
 This stage may mark a contact candidate when a boundary endpoint reaches another
 boundary. It must not resolve split or merge topology.
 
-### 12. KeySlice Graph
+### 12. Junction Evidence Compiler
+
+Compile split, merge, complex, and near-contact evidence from frame-local
+near-topology links.
+
+Inputs:
+
+- slice graph nodes;
+- near-topology lonlinks;
+- final FT ids and semantic metadata.
+
+Outputs:
+
+- junction candidates;
+- incoming and outgoing node sets;
+- involved final FT ids;
+- accepted frame-local evidence candidates;
+- rejected junction candidates with reasons.
+
+Rules:
+
+- current-frame junction classification lives here only;
+- this stage may group near links into one local evidence component;
+- this stage must not merge nodes, cut geometry, or commit persistent topology.
+
+### 13. KeySlice Graph
 
 Build the sparse frame-local graph used for topology reasoning.
 
@@ -331,38 +356,18 @@ Inputs:
 
 - observed and repaired boundary nodes;
 - observed and repaired lonlinks;
-- repair contact candidates.
+- junction evidence candidates.
 
 Outputs:
 
 - key slices;
 - key-slice nodes;
 - keynode links;
-- contact candidates attached to key-slice nodes.
+- junction evidence attached to key-slice nodes.
 
 This stage is the only bridge between dense boundary geometry and sparse
 topology.
 
-### 13. Junction Evidence Compiler
-
-Compile split, merge, and complex junction evidence from the KeySlice graph.
-
-Inputs:
-
-- key slices;
-- keynode links;
-- contact candidates.
-
-Outputs:
-
-- junction candidates;
-- accepted frame-local evidence candidates;
-- rejected junction candidates with reasons;
-- frame-local resegmentation hints.
-
-Rules:
-
-- current-frame junction classification lives here only;
 - a contact candidate is evidence, not an immediate committed junction;
 - persistent split/merge commit is owned only by
   `StatefulSmoothTopologyTracker`;
@@ -464,8 +469,8 @@ Allowed pattern:
 
 ```text
 LonLink Repair records contact candidate
-KeySlice Graph attaches candidate to sparse nodes
 JunctionEvidenceCompiler classifies split/merge/complex evidence
+KeySlice Graph attaches evidence to sparse nodes
 Resegmented Boundaries apply frame-local evidence
 Single-frame Propagation reports eligibility
 StatefulSmoothTopologyTracker commits or rejects persistent topology over time

@@ -60,10 +60,10 @@ ReplayFrameInput
   -> RawFtFilterBuilder
   -> RawFtAssociationBuilder
   -> FrenetSliceGraphBuilder
+  -> JunctionEvidenceCompiler
   -> RibbonProfileCompiler
   -> LonLinkRepairer
   -> KeySliceGraphBuilder
-  -> JunctionEvidenceCompiler
   -> BoundaryResegmenter
   -> SingleFramePropagator
   -> StatefulSmoothTopologyTracker
@@ -121,7 +121,7 @@ KeySliceGraphOutput KeySliceGraphBuilder::build(
     const LonLinkRepairOutput& lonlink_repair) const;
 
 JunctionEvidenceOutput JunctionEvidenceCompiler::build(
-    const KeySliceGraphOutput& key_slice_graph) const;
+    const FrenetSliceGraphOutput& slice_graph) const;
 
 ResegmentedBoundaryOutput BoundaryResegmenter::apply(
     const LonLinkRepairOutput& lonlink_repair,

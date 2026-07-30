@@ -750,6 +750,35 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"lat_links", std::move(lat_links)},
             {"slice_ribbons", std::move(slice_ribbons)}};
     };
+    const auto junctionEvidenceToJson = [](const auto& result) {
+        const auto candidatesToJson = [](const auto& candidates) {
+            Json items = Json::array();
+            for (const auto& candidate : candidates) {
+                items.push_back({
+                    {"candidate_id", candidate.candidate_id},
+                    {"type", candidate.type},
+                    {"slice_index", candidate.slice_index},
+                    {"s_m", candidate.s_m},
+                    {"l_m", candidate.l_m},
+                    {"incoming_node_ids", candidate.incoming_node_ids},
+                    {"outgoing_node_ids", candidate.outgoing_node_ids},
+                    {"node_ids", candidate.node_ids},
+                    {"lon_link_ids", candidate.lon_link_ids},
+                    {"final_ft_ids", candidate.final_ft_ids},
+                    {"confidence", candidate.confidence},
+                    {"evidence", candidate.evidence}});
+            }
+            return items;
+        };
+        return Json{
+            {"schema_version", "topology-map-v3.junction-evidence.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"candidate_count", result.candidates.size()},
+            {"rejected_count", result.rejected.size()},
+            {"candidates", candidatesToJson(result.candidates)},
+            {"rejected", candidatesToJson(result.rejected)}};
+    };
     const auto boundaryColor = [](const std::string& semantic_type) {
         if (semantic_type == "curb") return "#eb5757";
         if (semantic_type == "road_edge") return "#f2994a";
@@ -1167,6 +1196,77 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
+    const auto junctionEvidenceLayer = [](
+                                             const auto& result,
+                                             const auto& slice_graph) {
+        Json layer = {
+            {"id", "junction_evidence"},
+            {"name", "Junction evidence"},
+            {"visible", false},
+            {"modes", {"frenet"}},
+            {"items", Json::array()}};
+        if (!result.ok || !slice_graph.ok) return layer;
+
+        std::map<std::uint64_t, const topology_map::topology_v3::FrenetSliceGraphNode*> nodes;
+        for (const auto& node : slice_graph.nodes) nodes[node.node_id] = &node;
+        const auto typeColor = [](const std::string& type) {
+            if (type == "split") return "#00d084";
+            if (type == "merge") return "#2d9cdb";
+            if (type == "complex") return "#9b51e0";
+            return "#f2c94c";
+        };
+        const auto nodePoint = [&](std::uint64_t node_id) {
+            const auto it = nodes.find(node_id);
+            if (it == nodes.end()) return Json{};
+            return Json{{"s_m", it->second->s_m}, {"l_m", it->second->l_m}};
+        };
+        const auto nodeLabel = [&](std::uint64_t node_id) {
+            const auto it = nodes.find(node_id);
+            if (it == nodes.end()) return std::string{};
+            return it->second->debug_label + "@" + std::to_string(it->second->slice_index);
+        };
+
+        for (const auto& candidate : result.candidates) {
+            const std::string color = typeColor(candidate.type);
+            Json point = {
+                {"s_m", candidate.s_m},
+                {"l_m", candidate.l_m},
+                {"name", candidate.type + " J" + std::to_string(candidate.candidate_id)}};
+            layer["items"].push_back({
+                {"type", "points"},
+                {"id", "junction_evidence_point_" + std::to_string(candidate.candidate_id)},
+                {"name", candidate.type + " J" + std::to_string(candidate.candidate_id)},
+                {"points", Json::array({point})},
+                {"style", {{"color", color}, {"radius_px", 7.0}}},
+                {"properties", {
+                    {"source", "junction_evidence_compiler"},
+                    {"type", candidate.type},
+                    {"confidence", candidate.confidence},
+                    {"slice_index", candidate.slice_index},
+                    {"incoming_node_ids", candidate.incoming_node_ids},
+                    {"outgoing_node_ids", candidate.outgoing_node_ids},
+                    {"lon_link_ids", candidate.lon_link_ids},
+                    {"evidence", candidate.evidence}}}});
+
+            for (std::uint64_t node_id : candidate.node_ids) {
+                if (nodes.count(node_id) == 0) continue;
+                layer["items"].push_back({
+                    {"type", "polyline"},
+                    {"id", "junction_evidence_edge_" + std::to_string(candidate.candidate_id) +
+                             "_" + std::to_string(node_id)},
+                    {"name", nodeLabel(node_id)},
+                    {"points", Json::array({
+                        Json{{"s_m", candidate.s_m}, {"l_m", candidate.l_m}},
+                        nodePoint(node_id)})},
+                    {"style", {{"color", color}, {"width", 0.09}, {"dash", true}}},
+                    {"properties", {
+                        {"source", "junction_evidence_compiler"},
+                        {"candidate_id", candidate.candidate_id},
+                        {"node_id", node_id}}}});
+            }
+        }
+        return layer;
+    };
     return {
         {"frame_id", input.frame_id},
         {"timestamp_us", input.timestamp_us},
@@ -1186,6 +1286,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"raw_ft_filter", rawFtFilterToJson(output.raw_ft_filter)},
         {"raw_ft_association", rawFtAssociationToJson(output.raw_ft_association)},
         {"frenet_slice_graph", frenetSliceGraphToJson(output.frenet_slice_graph)},
+        {"junction_evidence", junctionEvidenceToJson(output.junction_evidence)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),
@@ -1197,7 +1298,9 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                         rawFtAssociationLayer(output.raw_ft_association,
                                              output.raw_ft_filter,
                                              output.frenet_slice_intersections),
-                        frenetSliceGraphLayer(output.frenet_slice_graph)}},
+                        frenetSliceGraphLayer(output.frenet_slice_graph),
+                        junctionEvidenceLayer(output.junction_evidence,
+                                              output.frenet_slice_graph)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};
 }

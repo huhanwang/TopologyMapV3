@@ -11,7 +11,7 @@ public:
         double max_contact_distance_m = 0.5;
     };
 
-    JunctionEvidenceOutput build(const KeySliceGraphOutput& key_slice_graph) const;
+    JunctionEvidenceOutput build(const FrenetSliceGraphOutput& slice_graph) const;
 
 private:
     Config cfg_;

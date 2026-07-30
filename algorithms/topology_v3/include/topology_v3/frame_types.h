@@ -421,7 +421,14 @@ struct KeySliceGraphOutput {
 struct JunctionCandidate {
     std::uint64_t candidate_id = 0;
     std::string type;
+    int slice_index = -1;
+    double s_m = 0.0;
+    double l_m = 0.0;
+    std::vector<std::uint64_t> incoming_node_ids;
+    std::vector<std::uint64_t> outgoing_node_ids;
     std::vector<std::uint64_t> node_ids;
+    std::vector<std::uint64_t> lon_link_ids;
+    std::vector<std::uint64_t> final_ft_ids;
     double confidence = 0.0;
     std::vector<std::string> evidence;
 };

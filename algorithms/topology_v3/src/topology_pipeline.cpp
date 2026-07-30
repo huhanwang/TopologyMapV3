@@ -26,6 +26,8 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         frenet_slice_graph_builder_.build(output.frenet_slice_intersections,
                                           output.raw_ft_filter,
                                           output.raw_ft_association);
+    output.junction_evidence =
+        junction_evidence_compiler_.build(output.frenet_slice_graph);
 
     output.debug_layers.push_back({
         "visual_reference",
@@ -81,6 +83,12 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         output.frenet_slice_graph.ok,
         {output.frenet_slice_graph.ok ? "frenet slice graph generated"
                                       : output.frenet_slice_graph.error}});
+    output.debug_layers.push_back({
+        "junction_evidence",
+        "junction_evidence",
+        output.junction_evidence.ok,
+        {output.junction_evidence.ok ? "junction evidence generated"
+                                     : output.junction_evidence.error}});
     return output;
 }
 
