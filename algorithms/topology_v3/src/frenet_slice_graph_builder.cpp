@@ -430,11 +430,6 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
         if (!next) continue;
         const double width = std::abs(node.l_m - candidate->l_m);
         if (width > cfg.max_corridor_support_width_m) continue;
-        if (laneLine(node.semantic_type) &&
-            width < cfg.min_stable_ribbon_width_m &&
-            width > cfg.max_junction_probe_width_m) {
-            continue;
-        }
         if (!supportAllowedForNode(node, width, cfg)) continue;
         result.push_back({candidate, next, node.l_m - candidate->l_m,
                           candidate->l_m > node.l_m,
@@ -608,7 +603,6 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             const auto supports = adjacentSupports(graph, *node, forward, cfg_);
             if (supports.empty()) continue;
             const auto& support = supports.front();
-            if (support.junction_probe) continue;
             const double predicted_l = support.next->l_m + support.width_m;
             const auto near_nodes = nearNodes(graph, *node, target_slice, predicted_l, cfg_);
             if (!near_nodes.empty()) {
