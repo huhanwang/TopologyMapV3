@@ -42,6 +42,25 @@ bool validLaneWidth(double width_m, const FrenetSliceGraphBuilder::Config& cfg) 
            width_m <= cfg.max_stable_ribbon_width_m;
 }
 
+bool validPassiveRepairWidth(double width_m, const FrenetSliceGraphBuilder::Config& cfg) {
+    return std::isfinite(width_m) &&
+           width_m >= cfg.min_passive_repair_width_m &&
+           width_m <= cfg.max_stable_ribbon_width_m;
+}
+
+bool supportAllowedForNode(const FrenetSliceGraphNode& node,
+                           double width_m,
+                           const FrenetSliceGraphBuilder::Config& cfg) {
+    const double abs_width = std::abs(width_m);
+    if (laneLine(node.semantic_type)) {
+        return validLaneWidth(abs_width, cfg) || abs_width <= cfg.max_corridor_support_width_m;
+    }
+    if (passiveBoundary(node.semantic_type)) {
+        return validPassiveRepairWidth(abs_width, cfg);
+    }
+    return false;
+}
+
 bool repairableBoundary(const FrenetSliceGraphNode& node,
                         const std::map<std::uint64_t, DecisionInfo>& decisions,
                         const FrenetSliceGraphBuilder::Config& cfg) {
@@ -80,6 +99,16 @@ std::map<std::uint64_t, std::map<int, FrenetSliceIntersectionNode>> buildKeptNod
             if (!keep) continue;
             result[node.raw_ft_id][node.slice_index] = node;
         }
+    }
+    return result;
+}
+
+std::map<std::uint64_t, std::pair<int, int>> buildRawFtSliceRanges(
+    const std::map<std::uint64_t, std::map<int, FrenetSliceIntersectionNode>>& kept_nodes) {
+    std::map<std::uint64_t, std::pair<int, int>> result;
+    for (const auto& [raw_ft_id, by_slice] : kept_nodes) {
+        if (by_slice.empty()) continue;
+        result[raw_ft_id] = {by_slice.begin()->first, by_slice.rbegin()->first};
     }
     return result;
 }
@@ -292,9 +321,7 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
             const auto* inherited_next = graph.sameFinalFtNext(node, *inherited, forward);
             if (inherited_next) {
                 const double width = std::abs(node.l_m - inherited->l_m);
-                const bool stable_lane_width = validLaneWidth(width, cfg);
-                if (stable_lane_width ||
-                    (laneLine(node.semantic_type) && width <= cfg.max_corridor_support_width_m)) {
+                if (supportAllowedForNode(node, width, cfg)) {
                     result.push_back({
                         inherited,
                         inherited_next,
@@ -313,14 +340,13 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
         if (!next) continue;
         const double width = std::abs(node.l_m - candidate->l_m);
         if (width > cfg.max_corridor_support_width_m) continue;
-        const bool stable_lane_width = validLaneWidth(width, cfg);
-        if (!stable_lane_width && !laneLine(node.semantic_type)) continue;
+        if (!supportAllowedForNode(node, width, cfg)) continue;
         result.push_back({candidate, next, node.l_m - candidate->l_m, candidate->l_m > node.l_m});
     }
-    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+    std::sort(result.begin(), result.end(), [&](const auto& a, const auto& b) {
         if (a.support_is_left != b.support_is_left) return a.support_is_left > b.support_is_left;
-        const bool a_stable = std::abs(a.width_m) >= 2.7 && std::abs(a.width_m) <= 4.8;
-        const bool b_stable = std::abs(b.width_m) >= 2.7 && std::abs(b.width_m) <= 4.8;
+        const bool a_stable = validLaneWidth(std::abs(a.width_m), cfg);
+        const bool b_stable = validLaneWidth(std::abs(b.width_m), cfg);
         if (a_stable != b_stable) return a_stable > b_stable;
         return std::abs(a.width_m) < std::abs(b.width_m);
     });
@@ -333,6 +359,7 @@ std::vector<std::uint64_t> nearNodes(const GraphWork& graph,
                                      double predicted_l,
                                      const FrenetSliceGraphBuilder::Config& cfg) {
     std::vector<std::uint64_t> result;
+    if (passiveBoundary(node.semantic_type)) return result;
     for (std::uint64_t candidate_id : graph.activeNodesAtSlice(target_slice)) {
         const auto* candidate = graph.node(candidate_id);
         if (!candidate || candidate->final_ft_id == node.final_ft_id) continue;
@@ -342,6 +369,43 @@ std::vector<std::uint64_t> nearNodes(const GraphWork& graph,
         }
     }
     return result;
+}
+
+std::optional<double> nearestLaneLineDistance(const GraphWork& graph,
+                                              int target_slice,
+                                              std::uint64_t final_ft_id,
+                                              double target_l) {
+    std::optional<double> result;
+    for (std::uint64_t candidate_id : graph.activeNodesAtSlice(target_slice)) {
+        const auto* candidate = graph.node(candidate_id);
+        if (!candidate || candidate->final_ft_id == final_ft_id) continue;
+        if (!laneLine(candidate->semantic_type)) continue;
+        const double distance = std::abs(candidate->l_m - target_l);
+        if (!result || distance < *result) result = distance;
+    }
+    return result;
+}
+
+bool passiveRepairTargetClear(const GraphWork& graph,
+                              const FrenetSliceGraphNode& node,
+                              int target_slice,
+                              double target_l,
+                              const FrenetSliceGraphBuilder::Config& cfg) {
+    if (!passiveBoundary(node.semantic_type)) return true;
+    const auto nearest_lane = nearestLaneLineDistance(
+        graph, target_slice, node.final_ft_id, target_l);
+    return !nearest_lane || *nearest_lane >= cfg.min_passive_repair_width_m;
+}
+
+bool passiveRepairEndpointDirection(
+    const FrenetSliceGraphNode& node,
+    bool forward,
+    const std::map<std::uint64_t, std::pair<int, int>>& raw_ft_slice_ranges) {
+    if (!passiveBoundary(node.semantic_type)) return true;
+    const auto it = raw_ft_slice_ranges.find(node.raw_ft_id);
+    if (it == raw_ft_slice_ranges.end()) return false;
+    return forward ? node.slice_index == it->second.second
+                   : node.slice_index == it->second.first;
 }
 
 }  // namespace
@@ -359,6 +423,7 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
 
     const auto decisions = buildDecisionMap(filter);
     const auto kept_nodes = buildKeptNodes(intersections, decisions);
+    const auto raw_ft_slice_ranges = buildRawFtSliceRanges(kept_nodes);
     GraphWork graph(&output);
 
     for (const auto& [raw_ft_id, by_slice] : kept_nodes) {
@@ -384,8 +449,14 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
         std::vector<std::pair<std::uint64_t, bool>> frontier;
         for (const auto& node : output.nodes) {
             if (!activeNodeState(node) || !repairableBoundary(node, decisions, cfg_)) continue;
-            if (!graph.hasDirectionalLonLink(node.node_id, true)) frontier.push_back({node.node_id, true});
-            if (!graph.hasDirectionalLonLink(node.node_id, false)) frontier.push_back({node.node_id, false});
+            if (!graph.hasDirectionalLonLink(node.node_id, true) &&
+                passiveRepairEndpointDirection(node, true, raw_ft_slice_ranges)) {
+                frontier.push_back({node.node_id, true});
+            }
+            if (!graph.hasDirectionalLonLink(node.node_id, false) &&
+                passiveRepairEndpointDirection(node, false, raw_ft_slice_ranges)) {
+                frontier.push_back({node.node_id, false});
+            }
         }
 
         for (const auto& [node_id, forward] : frontier) {
@@ -406,6 +477,9 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             const double target_s = intersections.slices[static_cast<std::size_t>(target_slice)].s_m;
             const auto self_prediction = predictBySelfTrend(graph, *node, forward, target_s);
             if (self_prediction) {
+                if (!passiveRepairTargetClear(graph, *node, target_slice, *self_prediction, cfg_)) {
+                    continue;
+                }
                 const auto self_near_nodes = nearNodes(graph, *node, target_slice,
                                                        *self_prediction, cfg_);
                 if (!self_near_nodes.empty()) {
@@ -423,6 +497,9 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             if (supports.empty()) continue;
             const auto& support = supports.front();
             const double predicted_l = support.next->l_m + support.width_m;
+            if (!passiveRepairTargetClear(graph, *node, target_slice, predicted_l, cfg_)) {
+                continue;
+            }
             const auto near_nodes = nearNodes(graph, *node, target_slice, predicted_l, cfg_);
             if (!near_nodes.empty()) {
                 for (std::uint64_t near_id : near_nodes) {
@@ -433,12 +510,7 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
                 }
                 continue;
             }
-            const bool stable_lane_width = validLaneWidth(std::abs(support.width_m), cfg_);
-            if (!stable_lane_width && !laneLine(node->semantic_type)) continue;
-            if (!stable_lane_width &&
-                std::abs(support.width_m) > cfg_.max_corridor_support_width_m) {
-                continue;
-            }
+            if (!supportAllowedForNode(*node, support.width_m, cfg_)) continue;
 
             const std::uint64_t inferred_id = graph.addInferredNode(
                 *node, target_slice, target_s, predicted_l, *support.next, support.width_m,
