@@ -113,15 +113,46 @@ std::map<std::uint64_t, std::pair<int, int>> buildRawFtSliceRanges(
     return result;
 }
 
+std::map<std::uint64_t, std::uint64_t> buildFinalFtMap(
+    const std::map<std::uint64_t, std::map<int, FrenetSliceIntersectionNode>>& kept_nodes,
+    const RawFtAssociationOutput& associations) {
+    std::map<std::uint64_t, std::uint64_t> parent;
+    for (const auto& [raw_ft_id, _] : kept_nodes) parent[raw_ft_id] = raw_ft_id;
+    const auto find_root = [&](const auto& self, std::uint64_t id) -> std::uint64_t {
+        const auto it = parent.find(id);
+        if (it == parent.end() || it->second == id) return id;
+        return self(self, it->second);
+    };
+    const auto unite = [&](std::uint64_t first, std::uint64_t second) {
+        if (parent.count(first) == 0 || parent.count(second) == 0) return;
+        const std::uint64_t first_root = find_root(find_root, first);
+        const std::uint64_t second_root = find_root(find_root, second);
+        if (first_root == second_root) return;
+        if (first_root < second_root) parent[second_root] = first_root;
+        else parent[first_root] = second_root;
+    };
+    for (const auto& candidate : associations.candidates) {
+        if (candidate.classification == "ready_continuation") {
+            unite(candidate.from_raw_ft_id, candidate.to_raw_ft_id);
+        }
+    }
+    std::map<std::uint64_t, std::uint64_t> result;
+    for (const auto& [raw_ft_id, _] : kept_nodes) {
+        result[raw_ft_id] = find_root(find_root, raw_ft_id);
+    }
+    return result;
+}
+
 class GraphWork {
 public:
     explicit GraphWork(FrenetSliceGraphOutput* output) : output_(output) {}
 
-    std::uint64_t addObservedNode(const FrenetSliceIntersectionNode& source) {
+    std::uint64_t addObservedNode(const FrenetSliceIntersectionNode& source,
+                                  std::uint64_t final_ft_id) {
         FrenetSliceGraphNode node;
         node.node_id = next_node_id_++;
         node.raw_ft_id = source.raw_ft_id;
-        node.final_ft_id = source.raw_ft_id;
+        node.final_ft_id = final_ft_id;
         node.debug_label = source.debug_label;
         node.slice_index = source.slice_index;
         node.s_m = source.s_m;
@@ -133,6 +164,29 @@ public:
         output_->nodes.push_back(node);
         node_by_ft_slice_[{node.final_ft_id, node.slice_index}] = node.node_id;
         ++output_->observed_node_count;
+        return node.node_id;
+    }
+
+    std::uint64_t addAssociationConnectorNode(const FrenetSliceGraphNode& from,
+                                              const FrenetSliceGraphNode& to,
+                                              int target_slice,
+                                              double target_s,
+                                              double target_l) {
+        FrenetSliceGraphNode node;
+        node.node_id = next_node_id_++;
+        node.raw_ft_id = from.raw_ft_id;
+        node.final_ft_id = from.final_ft_id;
+        node.debug_label = from.debug_label;
+        node.slice_index = target_slice;
+        node.s_m = target_s;
+        node.l_m = target_l;
+        node.state = "inferred";
+        node.provenance = "raw_ft_association";
+        node.reason = "raw_ft_association_connector";
+        node.semantic_type = from.semantic_type.empty() ? to.semantic_type : from.semantic_type;
+        output_->nodes.push_back(node);
+        node_by_ft_slice_[{node.final_ft_id, node.slice_index}] = node.node_id;
+        ++output_->inferred_node_count;
         return node.node_id;
     }
 
@@ -421,7 +475,7 @@ bool passiveRepairEndpointDirection(
 FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
     const FrenetSliceIntersectionOutput& intersections,
     const RawFtFilterOutput& filter,
-    const RawFtAssociationOutput& /*associations*/) const {
+    const RawFtAssociationOutput& associations) const {
     FrenetSliceGraphOutput output;
     if (!intersections.ok || !filter.ok) {
         output.error = !intersections.ok ? intersections.error : filter.error;
@@ -432,13 +486,17 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
     const auto decisions = buildDecisionMap(filter);
     const auto kept_nodes = buildKeptNodes(intersections, decisions);
     const auto raw_ft_slice_ranges = buildRawFtSliceRanges(kept_nodes);
+    const auto final_ft_by_raw_ft = buildFinalFtMap(kept_nodes, associations);
     GraphWork graph(&output);
 
     for (const auto& [raw_ft_id, by_slice] : kept_nodes) {
         std::uint64_t previous_node = 0;
         int previous_slice = -1;
+        const auto final_it = final_ft_by_raw_ft.find(raw_ft_id);
+        const std::uint64_t final_ft_id =
+            final_it == final_ft_by_raw_ft.end() ? raw_ft_id : final_it->second;
         for (const auto& [slice_index, source] : by_slice) {
-            const std::uint64_t node_id = graph.addObservedNode(source);
+            const std::uint64_t node_id = graph.addObservedNode(source, final_ft_id);
             if (previous_node != 0 && slice_index == previous_slice + 1) {
                 graph.addLonLink(previous_node, node_id, "observed", source.confidence,
                                  "final_ft_consecutive_samples");
@@ -446,6 +504,42 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             previous_node = node_id;
             previous_slice = slice_index;
         }
+    }
+    for (const auto& candidate : associations.candidates) {
+        if (candidate.classification != "ready_continuation") continue;
+        const auto from_range = raw_ft_slice_ranges.find(candidate.from_raw_ft_id);
+        const auto to_range = raw_ft_slice_ranges.find(candidate.to_raw_ft_id);
+        const auto final_it = final_ft_by_raw_ft.find(candidate.from_raw_ft_id);
+        if (from_range == raw_ft_slice_ranges.end() ||
+            to_range == raw_ft_slice_ranges.end() ||
+            final_it == final_ft_by_raw_ft.end()) {
+            continue;
+        }
+        const int from_slice = from_range->second.second;
+        const int to_slice = to_range->second.first;
+        if (to_slice <= from_slice) continue;
+        const auto* from_node = graph.nodeByFtSlice(final_it->second, from_slice);
+        const auto* to_node = graph.nodeByFtSlice(final_it->second, to_slice);
+        if (!from_node || !to_node) continue;
+        std::uint64_t previous_node_id = from_node->node_id;
+        for (int slice = from_slice + 1; slice < to_slice; ++slice) {
+            if (const auto* existing = graph.nodeByFtSlice(final_it->second, slice)) {
+                graph.addLonLink(previous_node_id, existing->node_id, "inferred", 0.9,
+                                 "raw_ft_association_existing_final_ft_node");
+                previous_node_id = existing->node_id;
+                continue;
+            }
+            const double s = intersections.slices[static_cast<std::size_t>(slice)].s_m;
+            const double ratio = (s - from_node->s_m) / (to_node->s_m - from_node->s_m);
+            const double l = from_node->l_m + ratio * (to_node->l_m - from_node->l_m);
+            const std::uint64_t connector_id =
+                graph.addAssociationConnectorNode(*from_node, *to_node, slice, s, l);
+            graph.addLonLink(previous_node_id, connector_id, "inferred", 0.9,
+                             "raw_ft_association_connector");
+            previous_node_id = connector_id;
+        }
+        graph.addLonLink(previous_node_id, to_node->node_id, "inferred", 0.9,
+                         "raw_ft_association_connector");
     }
     graph.rebuildLateralLinks();
 

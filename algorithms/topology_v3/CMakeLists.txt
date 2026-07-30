@@ -4,6 +4,7 @@ add_library(topology_v3_core STATIC
     src/frenet_slice_intersection_builder.cpp
     src/geometry/frenet_projector.cpp
     src/navigation_reference_builder.cpp
+    src/raw_ft_association_builder.cpp
     src/raw_ft_filter_builder.cpp
     src/raw_visual_boundary_preprocessor.cpp
     src/raw_boundary_evidence_builder.cpp

@@ -655,6 +655,30 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"passive_boundary_count", result.passive_boundary_count},
             {"decisions", std::move(decisions)}};
     };
+    const auto rawFtAssociationToJson = [](const auto& result) {
+        Json candidates = Json::array();
+        for (const auto& candidate : result.candidates) {
+            candidates.push_back({
+                {"from_raw_ft_id", candidate.from_raw_ft_id},
+                {"to_raw_ft_id", candidate.to_raw_ft_id},
+                {"shared_anchor_raw_ft_id", candidate.shared_anchor_raw_ft_id},
+                {"anchor_is_left", candidate.anchor_is_left},
+                {"gap_m", candidate.gap_m},
+                {"endpoint_l_delta_m", candidate.endpoint_l_delta_m},
+                {"width_delta_m", candidate.width_delta_m},
+                {"score", candidate.score},
+                {"classification", candidate.classification},
+                {"reasons", candidate.reasons}});
+        }
+        return Json{
+            {"schema_version", "topology-map-v3.raw-ft-association.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"candidate_count", result.candidates.size()},
+            {"ready_continuation_count", result.ready_continuation_count},
+            {"ambiguous_count", result.ambiguous_count},
+            {"candidates", std::move(candidates)}};
+    };
     const auto frenetSliceGraphToJson = [](const auto& result) {
         Json nodes = Json::array();
         for (const auto& node : result.nodes) {
@@ -996,6 +1020,73 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
+    const auto rawFtAssociationLayer = [](
+                                             const auto& result,
+                                             const auto& filter,
+                                             const auto& intersections) {
+        Json layer = {
+            {"id", "raw_ft_association"},
+            {"name", "Raw FT associations"},
+            {"visible", false},
+            {"modes", {"frenet"}},
+            {"items", Json::array()}};
+        if (!result.ok || !intersections.ok) return layer;
+
+        std::map<std::uint64_t, std::string> labels;
+        for (const auto& decision : filter.decisions) {
+            labels[decision.raw_ft_id] = decision.debug_label;
+        }
+        std::map<std::uint64_t, std::map<int, topology_map::topology_v3::FrenetSliceIntersectionNode>> nodes_by_ft;
+        for (const auto& slice : intersections.slices) {
+            for (const auto& node : slice.nodes) {
+                nodes_by_ft[node.raw_ft_id][node.slice_index] = node;
+            }
+        }
+        const auto candidateColor = [](const std::string& classification) {
+            if (classification == "ready_continuation") return "#00d084";
+            if (classification == "near_observation") return "#f2c94c";
+            if (classification == "ambiguous_branch") return "#9b51e0";
+            if (classification == "blocked_by_intermediate_fragment") return "#eb5757";
+            return "#9aa4ad";
+        };
+        std::uint64_t item_id = 0;
+        for (const auto& candidate : result.candidates) {
+            const auto from_it = nodes_by_ft.find(candidate.from_raw_ft_id);
+            const auto to_it = nodes_by_ft.find(candidate.to_raw_ft_id);
+            if (from_it == nodes_by_ft.end() || to_it == nodes_by_ft.end() ||
+                from_it->second.empty() || to_it->second.empty()) {
+                continue;
+            }
+            const auto& from = from_it->second.rbegin()->second;
+            const auto& to = to_it->second.begin()->second;
+            const std::string from_label = labels.count(candidate.from_raw_ft_id)
+                ? labels[candidate.from_raw_ft_id] : std::to_string(candidate.from_raw_ft_id);
+            const std::string to_label = labels.count(candidate.to_raw_ft_id)
+                ? labels[candidate.to_raw_ft_id] : std::to_string(candidate.to_raw_ft_id);
+            layer["items"].push_back({
+                {"type", "polyline"},
+                {"id", "raw_ft_association_" + std::to_string(item_id++)},
+                {"name", from_label + " -> " + to_label + " " + candidate.classification},
+                {"points", Json::array({
+                    Json{{"s_m", from.s_m}, {"l_m", from.l_m}},
+                    Json{{"s_m", to.s_m}, {"l_m", to.l_m}}})},
+                {"style", {
+                    {"color", candidateColor(candidate.classification)},
+                    {"width", candidate.classification == "ready_continuation" ? 0.16 : 0.11},
+                    {"dash", candidate.classification != "ready_continuation"}}},
+                {"properties", {
+                    {"source", "raw_ft_association_builder"},
+                    {"classification", candidate.classification},
+                    {"from_raw_ft_id", candidate.from_raw_ft_id},
+                    {"to_raw_ft_id", candidate.to_raw_ft_id},
+                    {"shared_anchor_raw_ft_id", candidate.shared_anchor_raw_ft_id},
+                    {"gap_m", candidate.gap_m},
+                    {"endpoint_l_delta_m", candidate.endpoint_l_delta_m},
+                    {"width_delta_m", candidate.width_delta_m},
+                    {"score", candidate.score}}}});
+        }
+        return layer;
+    };
     const auto frenetSliceGraphLayer = [](
                                             const auto& result) {
         Json layer = {
@@ -1093,6 +1184,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"frenet_slice_intersections",
          frenetSliceIntersectionsToJson(output.frenet_slice_intersections)},
         {"raw_ft_filter", rawFtFilterToJson(output.raw_ft_filter)},
+        {"raw_ft_association", rawFtAssociationToJson(output.raw_ft_association)},
         {"frenet_slice_graph", frenetSliceGraphToJson(output.frenet_slice_graph)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
@@ -1102,6 +1194,9 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                         frenetSliceIntersectionsLayer(output.frenet_slice_intersections),
                         rawFtFilterLayer(output.raw_ft_filter,
                                          output.frenet_slice_intersections),
+                        rawFtAssociationLayer(output.raw_ft_association,
+                                             output.raw_ft_filter,
+                                             output.frenet_slice_intersections),
                         frenetSliceGraphLayer(output.frenet_slice_graph)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};

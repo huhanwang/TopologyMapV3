@@ -19,6 +19,9 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
                                                  output.fused_reference,
                                                  input.smooth_pose ? &*input.smooth_pose : nullptr);
     output.raw_ft_filter = raw_ft_filter_builder_.build(output.frenet_slice_intersections);
+    output.raw_ft_association =
+        raw_ft_association_builder_.build(output.frenet_slice_intersections,
+                                          output.raw_ft_filter);
     output.frenet_slice_graph =
         frenet_slice_graph_builder_.build(output.frenet_slice_intersections,
                                           output.raw_ft_filter,
@@ -66,6 +69,12 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         output.raw_ft_filter.ok,
         {output.raw_ft_filter.ok ? "raw FT filter generated"
                                  : output.raw_ft_filter.error}});
+    output.debug_layers.push_back({
+        "raw_ft_association",
+        "raw_ft_association",
+        output.raw_ft_association.ok,
+        {output.raw_ft_association.ok ? "raw FT association generated"
+                                      : output.raw_ft_association.error}});
     output.debug_layers.push_back({
         "frenet_slice_graph",
         "frenet_slice_graph",
