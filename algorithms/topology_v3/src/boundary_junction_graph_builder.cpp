@@ -42,6 +42,44 @@ std::vector<T> sortedUnique(std::vector<T> values) {
     return values;
 }
 
+std::string classifySolvedJunction(std::size_t incoming_count, std::size_t outgoing_count,
+                                   const std::string& fallback) {
+    if (incoming_count == 1 && outgoing_count > 1) return "split";
+    if (incoming_count > 1 && outgoing_count == 1) return "merge";
+    if (incoming_count == 1 && outgoing_count == 1) return "near_contact";
+    if (incoming_count > 1 || outgoing_count > 1) return "complex";
+    return fallback;
+}
+
+bool containsNode(const std::vector<std::uint64_t>& node_ids, std::uint64_t node_id) {
+    return std::find(node_ids.begin(), node_ids.end(), node_id) != node_ids.end();
+}
+
+bool endpointNear(double endpoint_s, double endpoint_l,
+                  const JunctionCandidate& candidate) {
+    constexpr double kMaxEndpointSDeltaM = 4.0;
+    constexpr double kMaxEndpointLDeltaM = 1.0;
+    return std::abs(endpoint_s - candidate.s_m) <= kMaxEndpointSDeltaM &&
+           std::abs(endpoint_l - candidate.l_m) <= kMaxEndpointLDeltaM;
+}
+
+std::vector<std::uint32_t> pruneShortIncidentConnectors(
+    std::vector<std::uint32_t> ids,
+    const std::vector<BoundaryJunctionBoundary>& boundaries) {
+    constexpr double kMinPrimaryIncidentLengthM = 6.0;
+    ids = sortedUnique(std::move(ids));
+    const bool has_primary = std::any_of(ids.begin(), ids.end(), [&](std::uint32_t id) {
+        return id < boundaries.size() && boundaries[id].length_m >= kMinPrimaryIncidentLengthM;
+    });
+    if (!has_primary) return ids;
+    std::vector<std::uint32_t> result;
+    for (std::uint32_t id : ids) {
+        if (id >= boundaries.size()) continue;
+        if (boundaries[id].length_m >= kMinPrimaryIncidentLengthM) result.push_back(id);
+    }
+    return result;
+}
+
 BoundaryJunctionBoundary makeBoundary(
     std::uint32_t boundary_id,
     const std::vector<std::uint64_t>& chain,
@@ -203,46 +241,34 @@ BoundaryJunctionGraphOutput BoundaryJunctionGraphBuilder::build(
         relation.confidence = candidate.confidence;
         relation.evidence = candidate.evidence;
 
-        const auto addBoundaryAtNode = [&](std::uint64_t node_id, bool incoming) {
-            const auto it = boundaries_by_node.find(node_id);
-            if (it == boundaries_by_node.end()) return;
-            for (std::uint32_t boundary_id : it->second) {
-                const auto& boundary = output.boundaries[boundary_id];
-                if (boundary.node_ids.empty()) continue;
-                const bool at_front = boundary.node_ids.front() == node_id;
-                const bool at_back = boundary.node_ids.back() == node_id;
-                if (incoming && at_back) {
-                    relation.incoming_boundary_ids.push_back(boundary_id);
-                }
-                if (!incoming && at_front) {
-                    relation.outgoing_boundary_ids.push_back(boundary_id);
-                }
+        for (const auto& boundary : output.boundaries) {
+            if (boundary.node_ids.empty() || boundary.samples.empty()) continue;
+            const std::uint64_t front_node_id = boundary.node_ids.front();
+            const std::uint64_t back_node_id = boundary.node_ids.back();
+            const auto& front_sample = boundary.samples.front();
+            const auto& back_sample = boundary.samples.back();
+
+            const bool front_at_candidate = containsNode(candidate.node_ids, front_node_id) ||
+                endpointNear(front_sample.s_m, front_sample.l_m, candidate);
+            const bool back_at_candidate = containsNode(candidate.node_ids, back_node_id) ||
+                endpointNear(back_sample.s_m, back_sample.l_m, candidate);
+
+            if (back_at_candidate && boundary.s_begin_m < candidate.s_m) {
+                relation.incoming_boundary_ids.push_back(boundary.boundary_id);
             }
-        };
-        for (std::uint64_t node_id : candidate.incoming_node_ids) {
-            addBoundaryAtNode(node_id, true);
-        }
-        for (std::uint64_t node_id : candidate.outgoing_node_ids) {
-            addBoundaryAtNode(node_id, false);
-        }
-        for (std::uint64_t node_id : candidate.node_ids) {
-            const auto it = boundaries_by_node.find(node_id);
-            if (it == boundaries_by_node.end()) continue;
-            for (std::uint32_t boundary_id : it->second) {
-                const auto& boundary = output.boundaries[boundary_id];
-                if (boundary.node_ids.empty()) continue;
-                if (boundary.node_ids.back() == node_id &&
-                    boundary.s_end_m <= candidate.s_m + 1.0) {
-                    relation.incoming_boundary_ids.push_back(boundary_id);
-                }
-                if (boundary.node_ids.front() == node_id &&
-                    boundary.s_begin_m >= candidate.s_m - 1.0) {
-                    relation.outgoing_boundary_ids.push_back(boundary_id);
-                }
+            if (front_at_candidate && boundary.s_end_m > candidate.s_m) {
+                relation.outgoing_boundary_ids.push_back(boundary.boundary_id);
             }
         }
-        relation.incoming_boundary_ids = sortedUnique(std::move(relation.incoming_boundary_ids));
-        relation.outgoing_boundary_ids = sortedUnique(std::move(relation.outgoing_boundary_ids));
+        relation.incoming_boundary_ids = pruneShortIncidentConnectors(
+            std::move(relation.incoming_boundary_ids), output.boundaries);
+        relation.outgoing_boundary_ids = pruneShortIncidentConnectors(
+            std::move(relation.outgoing_boundary_ids), output.boundaries);
+        relation.type = classifySolvedJunction(relation.incoming_boundary_ids.size(),
+                                               relation.outgoing_boundary_ids.size(),
+                                               candidate.type);
+        relation.evidence.push_back("boundary_junction_graph_port_solver");
+        relation.evidence = sortedUnique(std::move(relation.evidence));
         output.junctions.push_back(std::move(relation));
     }
 
