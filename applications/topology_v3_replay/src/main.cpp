@@ -1008,6 +1008,11 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
 
         std::map<std::uint64_t, const topology_map::topology_v3::FrenetSliceGraphNode*> nodes;
         for (const auto& node : result.nodes) nodes[node.node_id] = &node;
+        const auto nodeLabel = [&](std::uint64_t node_id) {
+            const auto it = nodes.find(node_id);
+            if (it == nodes.end()) return std::string{};
+            return it->second->debug_label + "@" + std::to_string(it->second->slice_index);
+        };
         const auto nodePoint = [&](std::uint64_t node_id) {
             const auto it = nodes.find(node_id);
             if (it == nodes.end()) return Json{};
@@ -1027,7 +1032,8 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             layer["items"].push_back({
                 {"type", "polyline"},
                 {"id", "frenet_slice_graph_lon_" + std::to_string(link.link_id)},
-                {"name", link.kind},
+                {"name", nodeLabel(link.from_node_id) + " -> " +
+                         nodeLabel(link.to_node_id) + " " + link.kind},
                 {"points", Json::array({nodePoint(link.from_node_id), nodePoint(link.to_node_id)})},
                 {"style", {
                     {"color", linkColor(link.kind)},
@@ -1043,7 +1049,11 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         Json inferred_points = Json::array();
         for (const auto& node : result.nodes) {
             if (node.state != "inferred") continue;
-            inferred_points.push_back({{"s_m", node.s_m}, {"l_m", node.l_m}});
+            Json point = {{"s_m", node.s_m}, {"l_m", node.l_m}};
+            point["name"] = node.debug_label + " inferred";
+            point["support_node_id"] = node.reconstruction_support_node_id;
+            point["width_m"] = node.reconstruction_width_m;
+            inferred_points.push_back(std::move(point));
         }
         if (!inferred_points.empty()) {
             layer["items"].push_back({
