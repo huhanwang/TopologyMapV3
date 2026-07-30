@@ -366,12 +366,35 @@ std::optional<double> predictBySelfTrend(const GraphWork& graph,
                                          const FrenetSliceGraphNode& node,
                                          bool forward,
                                          double target_s_m) {
-    const auto* opposite = graph.linkedNeighbor(node.node_id, !forward);
-    if (!opposite) return std::nullopt;
-    const double ds = node.s_m - opposite->s_m;
-    if (std::abs(ds) < 1e-6) return std::nullopt;
-    const double slope = (node.l_m - opposite->l_m) / ds;
-    const double predicted_l = node.l_m + slope * (target_s_m - node.s_m);
+    std::vector<const FrenetSliceGraphNode*> samples;
+    samples.push_back(&node);
+    const FrenetSliceGraphNode* current = &node;
+    while (samples.size() < 3) {
+        current = graph.linkedNeighbor(current->node_id, !forward);
+        if (!current) break;
+        samples.push_back(current);
+    }
+    if (samples.size() < 3) return std::nullopt;
+
+    double mean_s = 0.0;
+    double mean_l = 0.0;
+    for (const auto* sample : samples) {
+        mean_s += sample->s_m;
+        mean_l += sample->l_m;
+    }
+    mean_s /= static_cast<double>(samples.size());
+    mean_l /= static_cast<double>(samples.size());
+
+    double numerator = 0.0;
+    double denominator = 0.0;
+    for (const auto* sample : samples) {
+        const double ds = sample->s_m - mean_s;
+        numerator += ds * (sample->l_m - mean_l);
+        denominator += ds * ds;
+    }
+    if (denominator < 1e-6) return std::nullopt;
+    const double slope = numerator / denominator;
+    const double predicted_l = mean_l + slope * (target_s_m - mean_s);
     return std::isfinite(predicted_l) ? std::optional<double>(predicted_l) : std::nullopt;
 }
 
@@ -603,7 +626,10 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             const auto supports = adjacentSupports(graph, *node, forward, cfg_);
             if (supports.empty()) continue;
             const auto& support = supports.front();
-            const double predicted_l = support.next->l_m + support.width_m;
+            if (support.junction_probe && !self_prediction) continue;
+            const double predicted_l = support.junction_probe
+                ? *self_prediction
+                : support.next->l_m + support.width_m;
             const auto near_nodes = nearNodes(graph, *node, target_slice, predicted_l, cfg_);
             if (!near_nodes.empty()) {
                 for (std::uint64_t near_id : near_nodes) {
@@ -618,11 +644,13 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
 
             const std::uint64_t inferred_id = graph.addInferredNode(
                 *node, target_slice, target_s, predicted_l, *support.next, support.width_m,
-                "lonlink_repair_lateral_support");
+                support.junction_probe ? "lonlink_repair_self_trend_narrow_support"
+                                       : "lonlink_repair_lateral_support");
             graph.addLonLink(forward ? node_id : inferred_id,
                              forward ? inferred_id : node_id,
                              "inferred", 0.8,
-                             "lonlink_repair_lateral_support");
+                             support.junction_probe ? "lonlink_repair_self_trend_narrow_support"
+                                                    : "lonlink_repair_lateral_support");
             changed = true;
         }
         if (changed) graph.rebuildLateralLinks();
