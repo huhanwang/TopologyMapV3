@@ -1,6 +1,7 @@
 #include <sqlite3.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -1348,6 +1349,20 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             const auto& sample = front ? samples.front() : samples.back();
             return Json{{"s_m", sample.s_m}, {"l_m", sample.l_m}};
         };
+        const auto boundaryListLabel = [](const std::vector<std::uint32_t>& ids) {
+            std::string label;
+            for (std::size_t i = 0; i < ids.size(); ++i) {
+                if (i != 0) label += "/";
+                label += "B" + std::to_string(ids[i]);
+            }
+            return label.empty() ? std::string{"-"} : label;
+        };
+        const auto junctionLabel = [&](const auto& junction) {
+            std::string type = junction.type;
+            if (!type.empty()) type[0] = static_cast<char>(std::toupper(type[0]));
+            return type + " " + boundaryListLabel(junction.incoming_boundary_ids) +
+                   "->" + boundaryListLabel(junction.outgoing_boundary_ids);
+        };
 
         for (const auto& boundary : result.boundaries) {
             if (boundary.samples.empty()) continue;
@@ -1381,17 +1396,16 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
 
         for (const auto& junction : result.junctions) {
             const std::string color = junctionColor(junction.type);
+            const std::string label = junctionLabel(junction);
             Json point = {
                 {"s_m", junction.s_m},
                 {"l_m", junction.l_m},
-                {"name", junction.type + " J" +
-                         std::to_string(junction.junction_candidate_id)}};
+                {"name", label}};
             layer["items"].push_back({
                 {"type", "points"},
                 {"id", "boundary_junction_graph_junction_" +
                          std::to_string(junction.relation_id)},
-                {"name", junction.type + " J" +
-                         std::to_string(junction.junction_candidate_id)},
+                {"name", label},
                 {"points", Json::array({point})},
                 {"style", {{"color", color}, {"radius_px", 7.0}}},
                 {"properties", {
@@ -1408,7 +1422,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                     {"id", "boundary_junction_graph_in_" +
                              std::to_string(junction.relation_id) + "_" +
                              std::to_string(boundary_id)},
-                    {"name", "B" + std::to_string(boundary_id) + " -> J"},
+                    {"name", ""},
                     {"points", Json::array({
                         boundaryPoint(boundary_id, false),
                         Json{{"s_m", junction.s_m}, {"l_m", junction.l_m}}})},
@@ -1421,7 +1435,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                     {"id", "boundary_junction_graph_out_" +
                              std::to_string(junction.relation_id) + "_" +
                              std::to_string(boundary_id)},
-                    {"name", "J -> B" + std::to_string(boundary_id)},
+                    {"name", ""},
                     {"points", Json::array({
                         Json{{"s_m", junction.s_m}, {"l_m", junction.l_m}},
                         boundaryPoint(boundary_id, true)})},
