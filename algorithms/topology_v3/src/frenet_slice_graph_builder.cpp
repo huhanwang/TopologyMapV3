@@ -478,7 +478,10 @@ std::vector<std::uint64_t> nearNodes(const GraphWork& graph,
     for (std::uint64_t candidate_id : graph.activeNodesAtSlice(target_slice)) {
         const auto* candidate = graph.node(candidate_id);
         if (!candidate || candidate->final_ft_id == node.final_ft_id) continue;
-        if (!laneLine(candidate->semantic_type)) continue;
+        if (!laneLine(candidate->semantic_type) &&
+            !passiveBoundary(candidate->semantic_type)) {
+            continue;
+        }
         if (std::abs(candidate->l_m - predicted_l) <= cfg.near_node_distance_m) {
             result.push_back(candidate_id);
         }
