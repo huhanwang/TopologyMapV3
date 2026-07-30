@@ -16,6 +16,11 @@ public:
         double semantic_attachment_distance_m = 1.0;
         int min_semantic_attachment_samples = 4;
         double min_semantic_attachment_length_m = 8.0;
+        int min_close_duplicate_overlap_count = 3;
+        double min_close_duplicate_short_overlap_ratio = 0.7;
+        double max_close_duplicate_median_l_delta_m = 0.35;
+        double max_close_duplicate_l_delta_m = 0.6;
+        double min_close_duplicate_length_ratio = 1.5;
     };
 
     RawFtFilterOutput build(const FrenetSliceIntersectionOutput& intersections) const;
