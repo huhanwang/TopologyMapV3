@@ -1042,7 +1042,8 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             layer["items"].push_back({
                 {"type", "polyline"},
                 {"id", "frenet_slice_graph_lon_" + std::to_string(link.link_id)},
-                {"name", linkLabel(link.from_node_id, link.to_node_id)},
+                {"name", link.kind == "observed" ? "" :
+                         linkLabel(link.from_node_id, link.to_node_id)},
                 {"points", Json::array({nodePoint(link.from_node_id), nodePoint(link.to_node_id)})},
                 {"style", {
                     {"color", linkColor(link.kind)},
