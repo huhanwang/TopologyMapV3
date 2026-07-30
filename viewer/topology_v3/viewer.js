@@ -429,7 +429,7 @@ function drawPointCloud(points, color, radius = 3) {
 }
 
 function drawLabel(points, text, color) {
-  if (!el.labels.checked || !points.length) return;
+  if (!el.labels.checked || !points.length || !text) return;
   const anchor = points[Math.floor(points.length / 2)];
   const p = screen(anchor.forward, anchor.lateral);
   ctx.fillStyle = color;
@@ -448,6 +448,7 @@ function layerLabel(layer, item) {
     const nav = state.debug?.navigation_reference || {};
     return `Navigation ${Number(nav.lateral_error_m || 0).toFixed(2)}m`;
   }
+  if (Object.prototype.hasOwnProperty.call(item, "name") && item.name === "") return "";
   return item.name || item.id || layer.name || layer.id;
 }
 
