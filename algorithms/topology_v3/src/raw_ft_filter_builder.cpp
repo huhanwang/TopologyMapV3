@@ -74,6 +74,66 @@ bool isCloseDuplicateShorter(
            max_delta <= cfg.max_close_duplicate_l_delta_m;
 }
 
+double clamp01(double value) {
+    if (value < 0.0) return 0.0;
+    if (value > 1.0) return 1.0;
+    return value;
+}
+
+double rampDownScore(double value, double full_score_value, double zero_score_value) {
+    if (zero_score_value <= full_score_value) return value <= full_score_value ? 1.0 : 0.0;
+    return clamp01((zero_score_value - value) / (zero_score_value - full_score_value));
+}
+
+bool findNarrowestAdjacentLaneWidth(
+    std::uint64_t raw_ft_id,
+    const FrenetSliceIntersectionOutput& intersections,
+    const std::map<std::uint64_t, RawFtUseDecision>& decisions,
+    const RawFtFilterBuilder::Config& cfg,
+    double* narrowest_median_width_m) {
+    if (narrowest_median_width_m) *narrowest_median_width_m = 0.0;
+    std::map<std::uint64_t, std::vector<double>> widths_by_neighbor;
+    for (const auto& slice : intersections.slices) {
+        std::vector<const FrenetSliceIntersectionNode*> active_lane_nodes;
+        for (const auto& node : slice.nodes) {
+            const auto decision_it = decisions.find(node.raw_ft_id);
+            if (decision_it == decisions.end()) continue;
+            if (decision_it->second.state != "kept") continue;
+            if (node.semantic_type != "lane_line") continue;
+            active_lane_nodes.push_back(&node);
+        }
+        std::sort(active_lane_nodes.begin(), active_lane_nodes.end(), [](const auto* a, const auto* b) {
+            if (a->l_m != b->l_m) return a->l_m < b->l_m;
+            return a->raw_ft_id < b->raw_ft_id;
+        });
+
+        for (std::size_t i = 0; i < active_lane_nodes.size(); ++i) {
+            if (active_lane_nodes[i]->raw_ft_id != raw_ft_id) continue;
+            for (std::size_t neighbor_index : {i == 0 ? i : i - 1, i + 1}) {
+                if (neighbor_index == i || neighbor_index >= active_lane_nodes.size()) continue;
+                const auto* neighbor = active_lane_nodes[neighbor_index];
+                widths_by_neighbor[neighbor->raw_ft_id].push_back(
+                    std::abs(active_lane_nodes[i]->l_m - neighbor->l_m));
+            }
+            break;
+        }
+    }
+
+    bool found = false;
+    double best_median = 0.0;
+    for (auto& [_, widths] : widths_by_neighbor) {
+        if (static_cast<int>(widths.size()) < cfg.min_far_short_narrow_overlap_count) continue;
+        std::sort(widths.begin(), widths.end());
+        const double median = widths[widths.size() / 2];
+        if (!found || median < best_median) {
+            best_median = median;
+            found = true;
+        }
+    }
+    if (found && narrowest_median_width_m) *narrowest_median_width_m = best_median;
+    return found;
+}
+
 void updateStats(RawFtStats* stats, const FrenetSliceIntersectionNode& node) {
     if (!stats) return;
     if (stats->sample_count == 0) {
@@ -163,6 +223,36 @@ RawFtFilterOutput RawFtFilterBuilder::build(
             short_decision->direct_topology_candidate = false;
             break;
         }
+    }
+
+    for (const auto& [raw_ft_id, stats] : stats_by_ft) {
+        auto* decision = findDecision(&decisions_by_ft, raw_ft_id);
+        if (!decision) continue;
+        if (!isActiveLaneLineDecision(*decision, stats)) continue;
+        if (stats.min_s_m < cfg_.far_short_start_s_m) continue;
+
+        const double short_score = rampDownScore(decision->support_length_m,
+                                                 cfg_.far_short_full_score_length_m,
+                                                 cfg_.far_short_zero_score_length_m);
+        const bool very_short =
+            decision->support_length_m <= cfg_.far_short_full_score_length_m;
+
+        double narrowest_width_m = 0.0;
+        const bool has_adjacent_lane = findNarrowestAdjacentLaneWidth(
+            raw_ft_id, intersections, decisions_by_ft, cfg_, &narrowest_width_m);
+        if (!very_short && !has_adjacent_lane) {
+            continue;
+        }
+        const double narrow_score = has_adjacent_lane
+            ? rampDownScore(narrowest_width_m, cfg_.far_narrow_full_score_width_m,
+                            cfg_.far_narrow_zero_score_width_m)
+            : 0.0;
+        const double noise_score = 0.5 * short_score + 0.5 * narrow_score;
+        if (!very_short && noise_score < cfg_.far_short_noise_score_threshold) continue;
+
+        decision->state = "suppressed";
+        decision->reason = "far_short_noise_raw_ft";
+        decision->direct_topology_candidate = false;
     }
 
     output.decisions.reserve(decisions_by_ft.size());

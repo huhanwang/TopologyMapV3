@@ -21,6 +21,13 @@ public:
         double max_close_duplicate_median_l_delta_m = 0.35;
         double max_close_duplicate_l_delta_m = 0.6;
         double min_close_duplicate_length_ratio = 1.5;
+        double far_short_start_s_m = 100.0;
+        int min_far_short_narrow_overlap_count = 3;
+        double far_short_full_score_length_m = 8.0;
+        double far_short_zero_score_length_m = 20.0;
+        double far_narrow_full_score_width_m = 1.0;
+        double far_narrow_zero_score_width_m = 2.2;
+        double far_short_noise_score_threshold = 0.65;
     };
 
     RawFtFilterOutput build(const FrenetSliceIntersectionOutput& intersections) const;
