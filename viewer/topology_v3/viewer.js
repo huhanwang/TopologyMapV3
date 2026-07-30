@@ -413,6 +413,21 @@ function drawSamples(points, color) {
   });
 }
 
+function drawPointCloud(points, color, radius = 3) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = "#111316";
+  ctx.lineWidth = 1;
+  points.forEach((point) => {
+    const p = screen(point.forward, point.lateral);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
 function drawLabel(points, text, color) {
   if (!el.labels.checked || !points.length) return;
   const anchor = points[Math.floor(points.length / 2)];
@@ -449,6 +464,15 @@ function drawVizItem(layer, item) {
     drawRibbon(rightPoints, leftPoints, style);
     drawSamples([...rightPoints, ...leftPoints], color);
     drawLabel([...rightPoints, ...leftPoints], layerLabel(layer, item), color);
+    return;
+  }
+  if (item.type === "points") {
+    const points = itemPoints(item);
+    const style = item.style || {};
+    const color = style.color || "#f2c94c";
+    const radius = Math.max(1.5, Number(style.radius_px || 3));
+    drawPointCloud(points, color, radius);
+    drawLabel(points, layerLabel(layer, item), color);
     return;
   }
   if (item.type !== "polyline") return;

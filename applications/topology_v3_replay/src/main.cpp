@@ -866,6 +866,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             const auto semantic_it = semantic_types.find(raw_ft_id);
             const std::string semantic =
                 semantic_it == semantic_types.end() ? "" : semantic_it->second;
+            Json intersection_points = points;
             layer["items"].push_back({
                 {"type", "polyline"},
                 {"id", "frenet_slice_nodes_" + std::to_string(raw_ft_id)},
@@ -875,6 +876,18 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                     {"color", boundaryColor(semantic)},
                     {"width", 0.10},
                     {"dash", false}}},
+                {"properties", {
+                    {"source", "frenet_slice_intersection_builder"},
+                    {"raw_ft_id", raw_ft_id},
+                    {"semantic_type", semantic}}}});
+            layer["items"].push_back({
+                {"type", "points"},
+                {"id", "frenet_slice_points_" + std::to_string(raw_ft_id)},
+                {"name", labels[raw_ft_id] + " intersections"},
+                {"points", std::move(intersection_points)},
+                {"style", {
+                    {"color", boundaryColor(semantic)},
+                    {"radius_px", 3.2}}},
                 {"properties", {
                     {"source", "frenet_slice_intersection_builder"},
                     {"raw_ft_id", raw_ft_id},
