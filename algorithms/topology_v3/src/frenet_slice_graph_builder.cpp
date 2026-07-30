@@ -506,6 +506,10 @@ bool passiveRepairEndpointDirection(
     if (!passiveBoundary(node.semantic_type)) return true;
     const auto it = raw_ft_slice_ranges.find(node.raw_ft_id);
     if (it == raw_ft_slice_ranges.end()) return false;
+    if (node.state == "inferred" && node.provenance == "ribbon_reconstruction") {
+        return forward ? node.slice_index >= it->second.second
+                       : node.slice_index <= it->second.first;
+    }
     return forward ? node.slice_index == it->second.second
                    : node.slice_index == it->second.first;
 }
