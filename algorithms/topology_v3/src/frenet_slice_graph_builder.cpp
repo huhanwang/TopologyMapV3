@@ -635,17 +635,6 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
                     }
                     continue;
                 }
-                if (narrow_contact) {
-                    const std::uint64_t inferred_id = graph.addSelfTrendNode(
-                        *node, target_slice, target_s, *self_prediction,
-                        "lonlink_repair_self_trend_narrow_contact_probe");
-                    graph.addLonLink(forward ? node_id : inferred_id,
-                                     forward ? inferred_id : node_id,
-                                     "inferred", 0.75,
-                                     "lonlink_repair_self_trend_narrow_contact_probe");
-                    changed = true;
-                    continue;
-                }
             }
             if (narrow_contact) continue;
 
