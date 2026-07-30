@@ -270,6 +270,24 @@ public:
                              node.slice_index + (forward ? 1 : -1));
     }
 
+    bool hasActiveLatLink(std::uint64_t first_node_id, std::uint64_t second_node_id) const {
+        return std::any_of(output_->lat_links.begin(), output_->lat_links.end(), [&](const auto& link) {
+            return link.active &&
+                   ((link.right_node_id == first_node_id && link.left_node_id == second_node_id) ||
+                    (link.left_node_id == first_node_id && link.right_node_id == second_node_id));
+        });
+    }
+
+    std::vector<std::uint64_t> adjacentNodeIds(std::uint64_t node_id) const {
+        std::vector<std::uint64_t> result;
+        for (const auto& link : output_->lat_links) {
+            if (!link.active) continue;
+            if (link.right_node_id == node_id) result.push_back(link.left_node_id);
+            else if (link.left_node_id == node_id) result.push_back(link.right_node_id);
+        }
+        return result;
+    }
+
     std::vector<std::uint64_t> activeNodesAtSlice(int slice_index) const {
         std::vector<std::uint64_t> result;
         for (const auto& node_ref : output_->nodes) {
@@ -317,7 +335,8 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
     std::vector<Support> result;
     if (node.reconstruction_support_node_id != 0) {
         const auto* inherited = graph.node(node.reconstruction_support_node_id);
-        if (inherited && inherited->slice_index == node.slice_index) {
+        if (inherited && inherited->slice_index == node.slice_index &&
+            graph.hasActiveLatLink(node.node_id, inherited->node_id)) {
             const auto* inherited_next = graph.sameFinalFtNext(node, *inherited, forward);
             if (inherited_next) {
                 const double width = std::abs(node.l_m - inherited->l_m);
@@ -332,7 +351,7 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
             }
         }
     }
-    for (std::uint64_t candidate_id : graph.activeNodesAtSlice(node.slice_index)) {
+    for (std::uint64_t candidate_id : graph.adjacentNodeIds(node.node_id)) {
         const auto* candidate = graph.node(candidate_id);
         if (!candidate || candidate->node_id == node.node_id) continue;
         if (!laneLine(candidate->semantic_type)) continue;
@@ -369,32 +388,6 @@ std::vector<std::uint64_t> nearNodes(const GraphWork& graph,
         }
     }
     return result;
-}
-
-std::optional<double> nearestLaneLineDistance(const GraphWork& graph,
-                                              int target_slice,
-                                              std::uint64_t final_ft_id,
-                                              double target_l) {
-    std::optional<double> result;
-    for (std::uint64_t candidate_id : graph.activeNodesAtSlice(target_slice)) {
-        const auto* candidate = graph.node(candidate_id);
-        if (!candidate || candidate->final_ft_id == final_ft_id) continue;
-        if (!laneLine(candidate->semantic_type)) continue;
-        const double distance = std::abs(candidate->l_m - target_l);
-        if (!result || distance < *result) result = distance;
-    }
-    return result;
-}
-
-bool passiveRepairTargetClear(const GraphWork& graph,
-                              const FrenetSliceGraphNode& node,
-                              int target_slice,
-                              double target_l,
-                              const FrenetSliceGraphBuilder::Config& cfg) {
-    if (!passiveBoundary(node.semantic_type)) return true;
-    const auto nearest_lane = nearestLaneLineDistance(
-        graph, target_slice, node.final_ft_id, target_l);
-    return !nearest_lane || *nearest_lane >= cfg.min_passive_repair_width_m;
 }
 
 bool passiveRepairEndpointDirection(
@@ -477,9 +470,6 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             const double target_s = intersections.slices[static_cast<std::size_t>(target_slice)].s_m;
             const auto self_prediction = predictBySelfTrend(graph, *node, forward, target_s);
             if (self_prediction) {
-                if (!passiveRepairTargetClear(graph, *node, target_slice, *self_prediction, cfg_)) {
-                    continue;
-                }
                 const auto self_near_nodes = nearNodes(graph, *node, target_slice,
                                                        *self_prediction, cfg_);
                 if (!self_near_nodes.empty()) {
@@ -497,9 +487,6 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             if (supports.empty()) continue;
             const auto& support = supports.front();
             const double predicted_l = support.next->l_m + support.width_m;
-            if (!passiveRepairTargetClear(graph, *node, target_slice, predicted_l, cfg_)) {
-                continue;
-            }
             const auto near_nodes = nearNodes(graph, *node, target_slice, predicted_l, cfg_);
             if (!near_nodes.empty()) {
                 for (std::uint64_t near_id : near_nodes) {
