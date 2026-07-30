@@ -19,6 +19,11 @@ public:
         const ReplayFrameInput& input,
         const FusedReferenceOutput& fused_reference) const;
 
+    RawBoundaryEvidenceOutput build(
+        const RawVisualBoundaryPreprocessOutput& preprocessed,
+        const FusedReferenceOutput& fused_reference,
+        const SmoothPoseInput* smooth_pose) const;
+
 private:
     Config cfg_;
 };

@@ -34,6 +34,62 @@ bool hasPreferredSource(const ReplayFrameInput& input, const std::string& source
                        [&source](const auto& line) { return line.source == source; });
 }
 
+RawBoundaryEvidence makeBoundaryEvidence(
+    const PreprocessedVisualBoundary& boundary,
+    const FrenetProjector& projector,
+    const SmoothPoseInput* smooth_pose,
+    const RawBoundaryEvidenceBuilder::Config& cfg,
+    std::size_t evidence_index) {
+    RawBoundaryEvidence evidence;
+    evidence.observation_id = boundary.raw_ft_id;
+    evidence.debug_label = "E" + std::to_string(evidence_index);
+    evidence.source_identity_ids = boundary.source_line_ids;
+    if (!boundary.source.empty()) evidence.source_identity_ids.push_back(boundary.source);
+    if (!boundary.track_line_id.empty()) evidence.source_identity_ids.push_back(boundary.track_line_id);
+    evidence.semantic_type = boundary.semantic_type;
+    evidence.quality = boundary.confidence;
+    evidence.samples.reserve(boundary.points.size());
+
+    std::size_t source_index = 0;
+    for (const auto& raw_point : boundary.points) {
+        FrenetProjection projection;
+        if (!projector.project(raw_point.x_m, raw_point.y_m, &projection)) {
+            ++source_index;
+            continue;
+        }
+        if (std::abs(projection.l_m) > cfg.max_abs_l_m) {
+            ++source_index;
+            continue;
+        }
+
+        FrenetSamplePoint sample;
+        sample.id = stableId(boundary.track_line_id + ":" + std::to_string(source_index));
+        sample.s_m = projection.s_m;
+        sample.l_m = projection.l_m;
+        sample.x_vcs_m = raw_point.x_m;
+        sample.y_vcs_m = raw_point.y_m;
+        if (smooth_pose && smooth_pose->valid) {
+            const auto smooth = vcsToSmooth(raw_point, *smooth_pose);
+            sample.x_smooth_m = smooth.x_m;
+            sample.y_smooth_m = smooth.y_m;
+        } else {
+            sample.x_smooth_m = std::numeric_limits<double>::quiet_NaN();
+            sample.y_smooth_m = std::numeric_limits<double>::quiet_NaN();
+        }
+        sample.confidence = boundary.confidence;
+        sample.source_line_id =
+            boundary.source_line_ids.empty() ? boundary.track_line_id : boundary.source_line_ids.front();
+        sample.track_line_id = boundary.track_line_id;
+        sample.semantic_type = boundary.semantic_type;
+        evidence.samples.push_back(std::move(sample));
+        ++source_index;
+    }
+
+    std::sort(evidence.samples.begin(), evidence.samples.end(),
+              [](const auto& a, const auto& b) { return a.s_m < b.s_m; });
+    return evidence;
+}
+
 }  // namespace
 
 RawBoundaryEvidenceOutput RawBoundaryEvidenceBuilder::build(
@@ -105,6 +161,41 @@ RawBoundaryEvidenceOutput RawBoundaryEvidenceBuilder::build(
         std::sort(boundary.samples.begin(), boundary.samples.end(),
                   [](const auto& a, const auto& b) { return a.s_m < b.s_m; });
         output.boundaries.push_back(std::move(boundary));
+        ++evidence_index;
+    }
+
+    output.ok = true;
+    if (output.boundaries.empty()) output.error = "no_projected_raw_boundary_evidence";
+    return output;
+}
+
+RawBoundaryEvidenceOutput RawBoundaryEvidenceBuilder::build(
+    const RawVisualBoundaryPreprocessOutput& preprocessed,
+    const FusedReferenceOutput& fused_reference,
+    const SmoothPoseInput* smooth_pose) const {
+    RawBoundaryEvidenceOutput output;
+    if (!preprocessed.ok) {
+        output.error = preprocessed.error.empty() ? "invalid_raw_visual_preprocess"
+                                                 : preprocessed.error;
+        return output;
+    }
+    if (!fused_reference.ok || fused_reference.points.size() < 2) {
+        output.error = "invalid_fused_reference";
+        return output;
+    }
+
+    const FrenetProjector projector(fused_reference);
+    if (!projector.ok()) {
+        output.error = projector.error();
+        return output;
+    }
+
+    std::size_t evidence_index = 0;
+    for (const auto& boundary : preprocessed.boundaries) {
+        if (boundary.rejected) continue;
+        auto evidence = makeBoundaryEvidence(boundary, projector, smooth_pose, cfg_, evidence_index);
+        if (evidence.samples.size() < cfg_.min_sample_count) continue;
+        output.boundaries.push_back(std::move(evidence));
         ++evidence_index;
     }
 

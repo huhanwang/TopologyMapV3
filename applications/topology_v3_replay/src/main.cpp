@@ -558,6 +558,38 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"sample_count", sample_count},
             {"boundaries", std::move(boundaries)}};
     };
+    const auto rawVisualPreprocessToJson = [](const auto& result) {
+        Json boundaries = Json::array();
+        for (const auto& boundary : result.boundaries) {
+            Json points = Json::array();
+            for (const auto& point : boundary.points) {
+                points.push_back({{"x_vcs_m", point.x_m}, {"y_vcs_m", point.y_m}});
+            }
+            boundaries.push_back({
+                {"raw_ft_id", boundary.raw_ft_id},
+                {"debug_label", boundary.debug_label},
+                {"source", boundary.source},
+                {"track_line_id", boundary.track_line_id},
+                {"source_line_ids", boundary.source_line_ids},
+                {"lane_id", boundary.lane_id},
+                {"lane_position", boundary.lane_position},
+                {"semantic_type", boundary.semantic_type},
+                {"confidence", boundary.confidence},
+                {"point_count", boundary.points.size()},
+                {"rejected", boundary.rejected},
+                {"rejection_reason", boundary.rejection_reason},
+                {"points", std::move(points)}});
+        }
+        return Json{
+            {"schema_version", "topology-map-v3.raw-visual-preprocess.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"input_line_count", result.input_line_count},
+            {"boundary_count", result.boundaries.size()},
+            {"merged_track_count", result.merged_track_count},
+            {"hard_rejected_count", result.hard_rejected_count},
+            {"boundaries", std::move(boundaries)}};
+    };
     const auto rawRibbonGraphToJson = [](const auto& result) {
         Json relations = Json::array();
         for (const auto& relation : result.lateral_relations) {
@@ -715,6 +747,41 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
+    const auto rawVisualPreprocessLayer = [&boundaryColor](const auto& result) {
+        Json layer = {
+            {"id", "raw_visual_preprocess"},
+            {"name", "Raw visual preprocess"},
+            {"visible", false},
+            {"modes", {"vcs"}},
+            {"items", Json::array()}};
+        if (!result.ok) return layer;
+        for (const auto& boundary : result.boundaries) {
+            if (boundary.points.size() < 2) continue;
+            Json points = Json::array();
+            for (const auto& point : boundary.points) {
+                points.push_back({{"x_vcs_m", point.x_m}, {"y_vcs_m", point.y_m}});
+            }
+            const std::string color = boundary.rejected ? "#ff3b30" : boundaryColor(boundary.semantic_type);
+            layer["items"].push_back({
+                {"type", "polyline"},
+                {"id", "raw_visual_preprocess_" + std::to_string(boundary.raw_ft_id) + "_" +
+                         boundary.debug_label},
+                {"name", boundary.debug_label},
+                {"points", std::move(points)},
+                {"style", {
+                    {"color", color},
+                    {"width", boundary.rejected ? 0.12 : 0.08},
+                    {"dash", boundary.rejected}}},
+                {"properties", {
+                    {"source", "raw_visual_boundary_preprocessor"},
+                    {"track_line_id", boundary.track_line_id},
+                    {"semantic_type", boundary.semantic_type},
+                    {"rejected", boundary.rejected},
+                    {"rejection_reason", boundary.rejection_reason},
+                    {"source_line_ids", boundary.source_line_ids}}}});
+        }
+        return layer;
+    };
     const auto rawRibbonGraphLayer = [&ribbonColor](const auto& result) {
         Json layer = {
             {"id", "raw_ribbon_graph"},
@@ -773,11 +840,13 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"visual_reference", visualReferenceToJson(output.visual_reference)},
         {"navigation_reference", navigationReferenceToJson(output.navigation_reference)},
         {"fused_reference", fusedReferenceToJson(output.fused_reference)},
+        {"raw_visual_preprocess", rawVisualPreprocessToJson(output.raw_visual_preprocess)},
         {"raw_boundary_evidence", rawBoundaryEvidenceToJson(output.raw_boundary_evidence)},
         {"raw_ribbon_graph", rawRibbonGraphToJson(output.raw_ribbon_graph)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),
+                        rawVisualPreprocessLayer(output.raw_visual_preprocess),
                         rawBoundaryEvidenceLayer(output.raw_boundary_evidence),
                         rawRibbonGraphLayer(output.raw_ribbon_graph)}},
         {"debug_layers", std::move(layers)},
