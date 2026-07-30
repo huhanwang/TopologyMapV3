@@ -120,16 +120,16 @@ RawFtFilterOutput RawFtFilterBuilder::build(
         decision.sample_count = stats.sample_count;
         decision.support_length_m = stats.max_s_m - stats.min_s_m;
 
-        if (decision.sample_count < cfg_.min_sample_count) {
+        if (passiveSemantic(stats.semantic_type)) {
+            decision.state = "passive_boundary";
+            decision.reason = "passive_boundary_semantic";
+            decision.passive_boundary = true;
+        } else if (decision.sample_count < cfg_.min_sample_count) {
             decision.state = "suppressed";
             decision.reason = "too_few_slice_nodes";
         } else if (decision.support_length_m < cfg_.min_support_length_m) {
             decision.state = "suppressed";
             decision.reason = "too_short_slice_support";
-        } else if (passiveSemantic(stats.semantic_type)) {
-            decision.state = "passive_boundary";
-            decision.reason = "passive_boundary_semantic";
-            decision.passive_boundary = true;
         } else {
             decision.state = "kept";
             decision.reason = "lane_line_direct_candidate";
