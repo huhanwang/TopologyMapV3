@@ -10,7 +10,9 @@ The main design goal is to make lane boundary topology explainable frame by
 frame:
 
 - where each reference line came from;
-- how raw ribbons were built;
+- how raw observations were compiled into Frenet slice nodes;
+- how raw FT ids were filtered and associated into frame-local final FT ids;
+- how slice ribbons and transitions were built;
 - how longitudinal gaps were repaired;
 - how key-slice nodes were linked;
 - where split/merge junctions were resolved;
@@ -29,10 +31,25 @@ Navigation References
 Fused Reference
         |
         v
+Raw Visual Boundary Preprocess
+        |
+        v
 Raw Boundary Evidence
         |
         v
-Raw Ribbon Graph
+Frenet Slice Intersections
+        |
+        v
+Raw FT Filter
+        |
+        v
+Raw FT Association
+        |
+        v
+Frenet Slice Graph
+        |
+        v
+Ribbon Profile Compiler
         |
         v
 LonLink Repair
@@ -50,7 +67,7 @@ Resegmented Boundaries
 Single-frame Propagation
         |
         v
-Smooth Topology Tracker
+Stateful Smooth Topology Tracker
         |
         v
 Presentation / Debug Compiler
@@ -65,17 +82,19 @@ selection. Algorithm stages consume `ReplayFrameInput` only.
 
 ### Frenet Observation Compiler
 
-The reference, raw evidence, ribbon, lonlink, keyslice, junction evidence,
-resegmentation, and single-frame propagation stages compile current-frame facts.
-They may create local observation ids and reject reasons, but they do not own
-persistent boundary ids, lane relations, or junction lifecycle.
+The reference, raw visual preprocess, raw evidence, slice intersection, raw FT
+filter, raw FT association, slice graph, ribbon profile, lonlink, keyslice,
+junction evidence, resegmentation, and single-frame propagation stages compile
+current-frame facts. They may create local observation ids and reject reasons,
+but they do not own persistent boundary ids, lane relations, or junction
+lifecycle.
 
-### Smooth Topology Tracker
+### Stateful Smooth Topology Tracker
 
-The smooth tracker is the only stateful topology owner. It owns persistent
-boundary ids, lane relation lifecycle, junction lifecycle, commit gates, and
-association traces. It consumes current-frame evidence; it does not ask Frenet
-stages to rewrite history.
+The stateful smooth tracker is the only stateful topology owner. It owns
+persistent boundary ids, lane relation lifecycle, junction lifecycle, commit
+gates, and association traces. It consumes current-frame evidence; it does not
+ask Frenet stages to rewrite history.
 
 ### Presentation / Debug Compiler
 
@@ -137,7 +156,32 @@ Outputs:
 
 All later geometry is expressed in this fused Frenet frame.
 
-### 4. Raw Boundary Evidence
+### 4. Raw Visual Boundary Preprocess
+
+Normalize raw visual boundary sections before Frenet topology compilation.
+
+Inputs:
+
+- raw visual boundary observations;
+- source type and lane id metadata.
+
+Outputs:
+
+- preprocessed raw FT boundaries;
+- source line ids retained for traceability;
+- hard reject records and reasons.
+
+Rules:
+
+- this stage may merge obvious same-source sections with the same visual track
+  identity;
+- early hard reject is only for unusable input: non-boundary semantics, fewer
+  than two points, impossible coordinates, or extremely short support below the
+  configured hard floor;
+- short but plausible fragments stay available for later context-based
+  filtering.
+
+### 5. Raw Boundary Evidence
 
 Project visual boundaries into the fused Frenet frame.
 
@@ -156,32 +200,107 @@ Outputs:
 This stage only samples and normalizes observations. It does not repair gaps and
 does not decide junctions.
 
-### 5. Raw Ribbon Graph
+### 6. Frenet Slice Intersections
 
-Build lateral relationships between adjacent boundary observations.
+Intersect each raw FT boundary with fixed Frenet slices.
 
 Inputs:
 
-- raw boundary nodes.
+- preprocessed raw FT boundaries;
+- fused reference;
+- optional smooth pose for smooth-coordinate debug points.
 
 Outputs:
 
-- lateral ribbons;
-- width samples;
+- observed slice nodes;
+- slice origin and normal;
+- raw FT id, source ids, semantic type, and confidence per node.
+
+This is the first topology-ready representation. It does not create lonlinks,
+lateral links, ribbons, or persistent ids.
+
+### 7. Raw FT Filter
+
+Classify each raw FT boundary for frame-local use.
+
+Inputs:
+
+- Frenet slice intersections.
+
+Outputs:
+
+- kept, pending, suppressed, or passive-boundary decisions;
+- direct topology candidate flag;
+- sample/support diagnostics and reasons.
+
+This stage answers whether a raw FT may participate directly in current-frame
+topology. It does not decide track identity and does not commit junctions.
+
+### 8. Raw FT Association
+
+Build frame-local continuation/grouping evidence between raw FT ids.
+
+Inputs:
+
+- Frenet slice intersections;
+- raw FT filter decisions.
+
+Outputs:
+
+- raw FT continuation candidates;
+- ambiguous association candidates;
+- score and reason trace.
+
+This stage separates source/track/final FT evidence, but final FT ids are still
+frame-local.
+
+### 9. Frenet Slice Graph
+
+Compile the current-frame Frenet observation graph.
+
+Inputs:
+
+- observed slice nodes;
+- raw FT filter decisions;
+- raw FT association candidates.
+
+Outputs:
+
+- graph nodes;
+- observed/inferred lonlinks;
+- lateral links;
+- slice ribbon cells;
+- ribbon transition evidence.
+
+This graph is the source of truth for current-frame ribbon topology. V3 should
+not rebuild topology from boundary-pair mean-l profiles.
+
+### 10. Ribbon Profile Compiler
+
+Summarize slice ribbons for debug display and propagation scoring.
+
+Inputs:
+
+- Frenet slice graph.
+
+Outputs:
+
+- ribbon width samples;
 - profile type: stable, opening, closing, wide, narrow, invalid;
 - support eligibility and rejection reasons.
 
-This stage answers: "Can these two boundaries form a usable ribbon?" It does not
-extend boundary geometry and does not create split/merge topology.
+This stage answers: "Can this slice-graph ribbon support propagation?" It does
+not extend boundary geometry and does not create split/merge topology.
 
-### 6. LonLink Repair
+### 11. LonLink Repair
 
 Repair missing longitudinal samples for each boundary.
 
 Inputs:
 
 - raw boundary nodes;
-- raw ribbon graph;
+- Frenet slice graph;
+- ribbon profiles;
 - fused reference slices.
 
 Outputs:
@@ -204,7 +323,7 @@ Repair stop records must be explicit:
 This stage may mark a contact candidate when a boundary endpoint reaches another
 boundary. It must not resolve split or merge topology.
 
-### 7. KeySlice Graph
+### 12. KeySlice Graph
 
 Build the sparse frame-local graph used for topology reasoning.
 
@@ -224,7 +343,7 @@ Outputs:
 This stage is the only bridge between dense boundary geometry and sparse
 topology.
 
-### 8. Junction Evidence Compiler
+### 13. Junction Evidence Compiler
 
 Compile split, merge, and complex junction evidence from the KeySlice graph.
 
@@ -245,11 +364,12 @@ Rules:
 
 - current-frame junction classification lives here only;
 - a contact candidate is evidence, not an immediate committed junction;
-- persistent split/merge commit is owned only by `SmoothTopologyTracker`;
+- persistent split/merge commit is owned only by
+  `StatefulSmoothTopologyTracker`;
 - frame-local candidates must be explainable by keynode degree and local
   geometry, with reject reasons for failed candidates.
 
-### 9. Resegmented Boundaries
+### 14. Resegmented Boundaries
 
 Apply junction evidence to frame-local boundary evidence.
 
@@ -276,14 +396,14 @@ Examples:
 - complex: structure is preserved as explicit unresolved topology instead of
   being collapsed silently.
 
-### 10. Single-frame Propagation
+### 15. Single-frame Propagation
 
 Decide which single-frame relations can propagate geometry or topology.
 
 Inputs:
 
 - resegmented boundaries;
-- raw ribbon graph;
+- ribbon profiles;
 - junction evidence.
 
 Outputs:
@@ -297,7 +417,7 @@ Outputs:
 Propagation is a consequence of the current-frame evidence. It must not create
 new split/merge topology or persistent track identity.
 
-### 11. Smooth Topology Tracker
+### 16. Stateful Smooth Topology Tracker
 
 Match the current frame to history and update persistent tracks.
 
@@ -317,7 +437,7 @@ Outputs:
 - persistent lane relations;
 - persistent junction tracks.
 
-The smooth tracker is the only stage allowed to commit, keep, or retire
+The stateful smooth tracker is the only stage allowed to commit, keep, or retire
 persistent topology. If junction evidence changes owner or type, the tracker
 creates new candidates and lets old tracks age out instead of silently mutating
 confirmed identity.
@@ -328,14 +448,14 @@ Junction handling has two different owners, separated by lifetime:
 
 ```text
 JunctionEvidenceCompiler owns current-frame junction evidence.
-SmoothTopologyTracker owns persistent junction lifecycle and commit.
+StatefulSmoothTopologyTracker owns persistent junction lifecycle and commit.
 ```
 
 Forbidden patterns:
 
 - LonLink Repair directly committing split/merge topology;
 - Frenet stages creating persistent junction ids;
-- SmoothTopologyTracker re-detecting junctions from raw geometry instead of
+- StatefulSmoothTopologyTracker re-detecting junctions from raw geometry instead of
   consuming junction evidence;
 - viewer-specific topology fixes;
 - multiple thresholds deciding the same "near" fact in different stages.
@@ -348,7 +468,7 @@ KeySlice Graph attaches candidate to sparse nodes
 JunctionEvidenceCompiler classifies split/merge/complex evidence
 Resegmented Boundaries apply frame-local evidence
 Single-frame Propagation reports eligibility
-SmoothTopologyTracker commits or rejects persistent topology over time
+StatefulSmoothTopologyTracker commits or rejects persistent topology over time
 ```
 
 ## Debug Layers
@@ -360,8 +480,12 @@ Required layers:
 - Visual Ref;
 - Navigation Ref;
 - Fused Ref;
+- Raw Visual Preprocess;
 - Raw Boundaries;
-- Raw Ribbons;
+- Frenet Slice Intersections;
+- Raw FT Filter;
+- Raw FT Association;
+- Frenet Slice Graph;
 - Ribbon Profiles;
 - Observed LonLinks;
 - Repaired Nodes;
@@ -417,6 +541,6 @@ Must not blindly reuse:
 - Geometry repair can create contact candidates, but it cannot commit
   split/merge topology.
 - JunctionEvidenceCompiler can classify current-frame evidence, but only
-  SmoothTopologyTracker can commit persistent split/merge topology.
+  StatefulSmoothTopologyTracker can commit persistent split/merge topology.
 - Persistent tracking consumes frame-local evidence and association scores; it
   does not invent topology from raw geometry.

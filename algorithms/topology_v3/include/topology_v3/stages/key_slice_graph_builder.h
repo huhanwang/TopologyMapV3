@@ -12,7 +12,7 @@ public:
     };
 
     KeySliceGraphOutput build(
-        const RawBoundaryEvidenceOutput& raw_evidence,
+        const FrenetSliceGraphOutput& slice_graph,
         const LonLinkRepairOutput& lonlink_repair) const;
 
 private:

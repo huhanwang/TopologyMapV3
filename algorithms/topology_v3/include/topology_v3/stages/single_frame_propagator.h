@@ -12,7 +12,7 @@ public:
 
     SingleFramePropagationOutput build(
         const ResegmentedBoundaryOutput& boundaries,
-        const RawRibbonGraphOutput& raw_ribbon_graph) const;
+        const RawRibbonGraphOutput& ribbon_profiles) const;
 
 private:
     Config cfg_;

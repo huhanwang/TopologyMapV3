@@ -13,8 +13,8 @@ public:
     };
 
     LonLinkRepairOutput repair(
-        const RawBoundaryEvidenceOutput& raw_evidence,
-        const RawRibbonGraphOutput& raw_ribbon_graph,
+        const FrenetSliceGraphOutput& slice_graph,
+        const RawRibbonGraphOutput& ribbon_profiles,
         const FusedReferenceOutput& fused_reference) const;
 
 private:

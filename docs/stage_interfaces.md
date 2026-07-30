@@ -54,14 +54,19 @@ ReplayFrameInput
   -> VisualReferenceBuilder
   -> NavigationReferenceBuilder
   -> FusedReferenceBuilder
+  -> RawVisualBoundaryPreprocessor
   -> RawBoundaryEvidenceBuilder
-  -> RawRibbonGraphBuilder
+  -> FrenetSliceIntersectionBuilder
+  -> RawFtFilterBuilder
+  -> RawFtAssociationBuilder
+  -> FrenetSliceGraphBuilder
+  -> RibbonProfileCompiler
   -> LonLinkRepairer
   -> KeySliceGraphBuilder
   -> JunctionEvidenceCompiler
   -> BoundaryResegmenter
   -> SingleFramePropagator
-  -> SmoothTopologyTracker
+  -> StatefulSmoothTopologyTracker
 ```
 
 ## Interface Summary
@@ -83,16 +88,36 @@ RawBoundaryEvidenceOutput RawBoundaryEvidenceBuilder::build(
     const ReplayFrameInput& input,
     const FusedReferenceOutput& fused_reference) const;
 
-RawRibbonGraphOutput RawRibbonGraphBuilder::build(
-    const RawBoundaryEvidenceOutput& raw_evidence) const;
+RawVisualBoundaryPreprocessOutput RawVisualBoundaryPreprocessor::build(
+    const ReplayFrameInput& input) const;
+
+FrenetSliceIntersectionOutput FrenetSliceIntersectionBuilder::build(
+    const RawVisualBoundaryPreprocessOutput& preprocessed,
+    const FusedReferenceOutput& fused_reference,
+    const SmoothPoseInput* smooth_pose) const;
+
+RawFtFilterOutput RawFtFilterBuilder::build(
+    const FrenetSliceIntersectionOutput& intersections) const;
+
+RawFtAssociationOutput RawFtAssociationBuilder::build(
+    const FrenetSliceIntersectionOutput& intersections,
+    const RawFtFilterOutput& filter) const;
+
+FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
+    const FrenetSliceIntersectionOutput& intersections,
+    const RawFtFilterOutput& filter,
+    const RawFtAssociationOutput& associations) const;
+
+RawRibbonGraphOutput RibbonProfileCompiler::build(
+    const FrenetSliceGraphOutput& slice_graph) const;
 
 LonLinkRepairOutput LonLinkRepairer::repair(
-    const RawBoundaryEvidenceOutput& raw_evidence,
-    const RawRibbonGraphOutput& raw_ribbon_graph,
+    const FrenetSliceGraphOutput& slice_graph,
+    const RawRibbonGraphOutput& ribbon_profiles,
     const FusedReferenceOutput& fused_reference) const;
 
 KeySliceGraphOutput KeySliceGraphBuilder::build(
-    const RawBoundaryEvidenceOutput& raw_evidence,
+    const FrenetSliceGraphOutput& slice_graph,
     const LonLinkRepairOutput& lonlink_repair) const;
 
 JunctionEvidenceOutput JunctionEvidenceCompiler::build(
@@ -104,21 +129,32 @@ ResegmentedBoundaryOutput BoundaryResegmenter::apply(
 
 SingleFramePropagationOutput SingleFramePropagator::build(
     const ResegmentedBoundaryOutput& boundaries,
-    const RawRibbonGraphOutput& raw_ribbon_graph) const;
+    const RawRibbonGraphOutput& ribbon_profiles) const;
 
-SmoothTopologyOutput SmoothTopologyTracker::update(
-    const ResegmentedBoundaryOutput& boundaries,
-    const SingleFramePropagationOutput& propagation,
+SmoothTopologyOutput StatefulSmoothTopologyTracker::update(
+    const FrenetSliceGraphOutput& slice_graph,
     const JunctionEvidenceOutput& junction_evidence);
 ```
 
 ## Ownership Rules
 
 - `FusedReferenceBuilder` is the only stage that chooses the frame reference.
+- `RawVisualBoundaryPreprocessor` may only merge obvious same-source sections
+  and hard reject unusable input. It must keep rejected records and reasons.
 - `RawBoundaryEvidenceBuilder` is the first stage allowed to create Frenet
-  samples for visual boundaries.
-- `RawRibbonGraphBuilder` evaluates lateral ribbons only; it does not repair
-  boundary geometry and does not classify junctions.
+  samples for visual boundaries. It remains a debug/projection artifact while
+  slice intersections become the topology-ready representation.
+- `FrenetSliceIntersectionBuilder` creates observed slice nodes. It does not
+  filter plausible boundaries except when projection is impossible.
+- `RawFtFilterBuilder` owns frame-local raw FT use decisions: kept, pending,
+  suppressed, or passive boundary.
+- `RawFtAssociationBuilder` owns current-frame raw FT continuation/grouping
+  evidence. It does not create persistent identity.
+- `FrenetSliceGraphBuilder` owns current-frame nodes, lonlinks, lateral links,
+  slice ribbons, and ribbon transition evidence.
+- `RibbonProfileCompiler` may summarize slice ribbons for debug display and
+  propagation scoring. The older boundary-pair `RawRibbonGraphBuilder` is only
+  a temporary compatibility path until the slice graph is live.
 - `LonLinkRepairer` repairs longitudinal samples and records contact evidence;
   it does not resolve split/merge topology.
 - `JunctionEvidenceCompiler` classifies current-frame split/merge/complex
@@ -127,7 +163,7 @@ SmoothTopologyOutput SmoothTopologyTracker::update(
   current-frame evidence, but those edges are still observations.
 - `SingleFramePropagator` reports frame-local propagation eligibility. It does
   not create or retire tracks.
-- `SmoothTopologyTracker` is the only owner of persistent boundary ids, lane
-  relation lifecycle, junction lifecycle, and commit gates.
+- `StatefulSmoothTopologyTracker` is the only owner of persistent boundary ids,
+  lane relation lifecycle, junction lifecycle, and commit gates.
 - `Presentation / Debug Compiler` only serializes artifacts; it must not repair
   or reinterpret topology.

@@ -4,7 +4,7 @@
 
 namespace topology_map::topology_v3 {
 
-class SmoothTopologyTracker {
+class StatefulSmoothTopologyTracker {
 public:
     struct Config {
         int max_missed_frames = 3;
@@ -14,8 +14,7 @@ public:
     };
 
     SmoothTopologyOutput update(
-        const ResegmentedBoundaryOutput& boundaries,
-        const SingleFramePropagationOutput& propagation,
+        const FrenetSliceGraphOutput& slice_graph,
         const JunctionEvidenceOutput& junction_evidence);
     void reset();
 
