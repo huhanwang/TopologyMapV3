@@ -190,29 +190,6 @@ public:
         return node.node_id;
     }
 
-    std::uint64_t addSelfTrendNode(const FrenetSliceGraphNode& endpoint,
-                                   int target_slice,
-                                   double target_s,
-                                   double target_l,
-                                   const std::string& reason) {
-        FrenetSliceGraphNode node;
-        node.node_id = next_node_id_++;
-        node.raw_ft_id = endpoint.raw_ft_id;
-        node.final_ft_id = endpoint.final_ft_id;
-        node.debug_label = endpoint.debug_label;
-        node.slice_index = target_slice;
-        node.s_m = target_s;
-        node.l_m = target_l;
-        node.state = "inferred";
-        node.provenance = "self_trend_reconstruction";
-        node.reason = reason;
-        node.semantic_type = endpoint.semantic_type;
-        output_->nodes.push_back(node);
-        node_by_ft_slice_[{node.final_ft_id, node.slice_index}] = node.node_id;
-        ++output_->inferred_node_count;
-        return node.node_id;
-    }
-
     std::uint64_t addInferredNode(const FrenetSliceGraphNode& endpoint,
                                   int target_slice,
                                   double target_s,
@@ -406,19 +383,6 @@ struct Support {
     bool junction_probe = false;
 };
 
-bool narrowLaneLineContact(const GraphWork& graph,
-                           const FrenetSliceGraphNode& node,
-                           const FrenetSliceGraphBuilder::Config& cfg) {
-    if (!laneLine(node.semantic_type)) return false;
-    for (std::uint64_t adjacent_id : graph.adjacentNodeIds(node.node_id)) {
-        const auto* adjacent = graph.node(adjacent_id);
-        if (!adjacent || !laneLine(adjacent->semantic_type)) continue;
-        const double width = std::abs(adjacent->l_m - node.l_m);
-        if (width < cfg.min_stable_ribbon_width_m) return true;
-    }
-    return false;
-}
-
 bool passiveAdjacentLaneLineClear(const GraphWork& graph,
                                   const FrenetSliceGraphNode& node,
                                   const FrenetSliceGraphBuilder::Config& cfg) {
@@ -466,6 +430,11 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
         if (!next) continue;
         const double width = std::abs(node.l_m - candidate->l_m);
         if (width > cfg.max_corridor_support_width_m) continue;
+        if (laneLine(node.semantic_type) &&
+            width < cfg.min_stable_ribbon_width_m &&
+            width > cfg.max_junction_probe_width_m) {
+            continue;
+        }
         if (!supportAllowedForNode(node, width, cfg)) continue;
         result.push_back({candidate, next, node.l_m - candidate->l_m,
                           candidate->l_m > node.l_m,
@@ -621,7 +590,6 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             }
 
             const double target_s = intersections.slices[static_cast<std::size_t>(target_slice)].s_m;
-            const bool narrow_contact = narrowLaneLineContact(graph, *node, cfg_);
             const auto self_prediction = predictBySelfTrend(graph, *node, forward, target_s);
             if (self_prediction) {
                 const auto self_near_nodes = nearNodes(graph, *node, target_slice,
@@ -636,7 +604,6 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
                     continue;
                 }
             }
-            if (narrow_contact) continue;
 
             const auto supports = adjacentSupports(graph, *node, forward, cfg_);
             if (supports.empty()) continue;
