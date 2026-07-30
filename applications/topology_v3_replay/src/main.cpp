@@ -602,6 +602,14 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         if (semantic_type == "stopline") return "#56ccf2";
         return "#dfe6e9";
     };
+    const auto ribbonColor = [](const std::string& profile_type) {
+        if (profile_type == "stable") return "#27ae60";
+        if (profile_type == "opening") return "#f2c94c";
+        if (profile_type == "closing") return "#f2994a";
+        if (profile_type == "too_narrow") return "#eb5757";
+        if (profile_type == "too_wide") return "#9b51e0";
+        return "#828b94";
+    };
     const auto visualReferenceLayer = [](const auto& result) {
         Json layer = {{"id", "visual_reference"}, {"name", "Visual reference"},
                       {"visible", true}, {"items", Json::array()}};
@@ -707,6 +715,52 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
+    const auto rawRibbonGraphLayer = [&ribbonColor](const auto& result) {
+        Json layer = {
+            {"id", "raw_ribbon_graph"},
+            {"name", "Raw ribbon graph"},
+            {"visible", true},
+            {"modes", {"frenet"}},
+            {"items", Json::array()}};
+        if (!result.ok) return layer;
+        for (const auto& relation : result.lateral_relations) {
+            if (relation.sample_s_m.size() < 2 ||
+                relation.sample_right_l_m.size() != relation.sample_s_m.size() ||
+                relation.sample_left_l_m.size() != relation.sample_s_m.size()) {
+                continue;
+            }
+            Json right_points = Json::array();
+            Json left_points = Json::array();
+            for (std::size_t i = 0; i < relation.sample_s_m.size(); ++i) {
+                right_points.push_back({{"s_m", relation.sample_s_m[i]},
+                                        {"l_m", relation.sample_right_l_m[i]}});
+                left_points.push_back({{"s_m", relation.sample_s_m[i]},
+                                       {"l_m", relation.sample_left_l_m[i]}});
+            }
+            const std::string color = ribbonColor(relation.profile_type);
+            layer["items"].push_back({
+                {"type", "ribbon"},
+                {"id", "raw_ribbon_" + std::to_string(relation.relation_id)},
+                {"name", relation.right_debug_label + "-" + relation.left_debug_label + " " +
+                         relation.profile_type},
+                {"right_points", std::move(right_points)},
+                {"left_points", std::move(left_points)},
+                {"style", {{"color", color}, {"fill", color}, {"width", 0.04}, {"alpha", 0.20}}},
+                {"properties", {
+                    {"source", "raw_ribbon_graph_builder"},
+                    {"right_debug_label", relation.right_debug_label},
+                    {"left_debug_label", relation.left_debug_label},
+                    {"profile_type", relation.profile_type},
+                    {"width_median_m", relation.width_median_m},
+                    {"width_min_m", relation.width_min_m},
+                    {"width_max_m", relation.width_max_m},
+                    {"stable_ratio", relation.stable_ratio},
+                    {"monotonic_ratio", relation.monotonic_ratio},
+                    {"propagation_eligible", relation.propagation_eligible},
+                    {"rejection_reasons", relation.rejection_reasons}}}});
+        }
+        return layer;
+    };
     return {
         {"frame_id", input.frame_id},
         {"timestamp_us", input.timestamp_us},
@@ -724,7 +778,8 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),
-                        rawBoundaryEvidenceLayer(output.raw_boundary_evidence)}},
+                        rawBoundaryEvidenceLayer(output.raw_boundary_evidence),
+                        rawRibbonGraphLayer(output.raw_ribbon_graph)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};
 }

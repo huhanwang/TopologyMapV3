@@ -156,6 +156,9 @@ function controlVisibleInCurrentMode(control) {
 function layerVisibleInCurrentMode(layer) {
   if (layer.id === "visual_reference") return controlVisibleInCurrentMode(el.visualReference.closest("[data-modes]"));
   if (layer.id === "navigation_reference") return controlVisibleInCurrentMode(el.navigationReference.closest("[data-modes]"));
+  if (layer.id === "fused_reference") return state.mode === "vcs";
+  if (layer.id === "raw_boundary_evidence") return state.mode === "frenet";
+  if (layer.id === "raw_ribbon_graph") return state.mode === "frenet";
   if (!layer.modes && !layer.data_modes) return true;
   const modes = Array.isArray(layer.modes) ? layer.modes : String(layer.data_modes || "").split(/\s+/);
   return modes.includes(state.mode);
@@ -182,7 +185,13 @@ function updateDynamicLayers() {
     }
     const label = document.createElement("label");
     label.className = "toggle";
-    if (Array.isArray(layer.modes)) {
+    if (layer.id === "fused_reference") {
+      label.dataset.modes = "vcs";
+    } else if (layer.id === "raw_boundary_evidence") {
+      label.dataset.modes = "frenet";
+    } else if (layer.id === "raw_ribbon_graph") {
+      label.dataset.modes = "frenet";
+    } else if (Array.isArray(layer.modes)) {
       label.dataset.modes = layer.modes.join(" ");
     } else if (layer.data_modes) {
       label.dataset.modes = String(layer.data_modes);
@@ -331,6 +340,11 @@ function pointForMode(point) {
 }
 
 function itemPoints(item) {
+  if (item.type === "ribbon") {
+    return [...(item.right_points || []), ...(item.left_points || [])]
+      .map(pointForMode)
+      .filter((point) => point && Number.isFinite(point.forward) && Number.isFinite(point.lateral));
+  }
   return (item.points || [])
     .map(pointForMode)
     .filter((point) => point && Number.isFinite(point.forward) && Number.isFinite(point.lateral));
@@ -362,6 +376,32 @@ function drawPolyline(points, color, width, dash = []) {
   });
   ctx.stroke();
   ctx.restore();
+}
+
+function drawRibbon(rightPoints, leftPoints, style = {}) {
+  if (state.mode !== "frenet" || rightPoints.length < 2 || leftPoints.length < 2) return;
+  const color = style.color || "#27ae60";
+  const fill = style.fill || color;
+  const alpha = Math.max(0.02, Math.min(0.45, Number(style.alpha ?? 0.18)));
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  rightPoints.forEach((point, index) => {
+    const p = screen(point.forward, point.lateral);
+    if (index) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+  });
+  for (let index = leftPoints.length - 1; index >= 0; --index) {
+    const p = screen(leftPoints[index].forward, leftPoints[index].lateral);
+    ctx.lineTo(p.x, p.y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  const width = Math.max(1.0, Number(style.width || 0.04) * view().scale);
+  drawPolyline(rightPoints, color, width);
+  drawPolyline(leftPoints, color, width);
 }
 
 function drawSamples(points, color) {
@@ -397,6 +437,20 @@ function layerLabel(layer, item) {
 }
 
 function drawVizItem(layer, item) {
+  if (item.type === "ribbon") {
+    const rightPoints = (item.right_points || [])
+      .map(pointForMode)
+      .filter((point) => point && Number.isFinite(point.forward) && Number.isFinite(point.lateral));
+    const leftPoints = (item.left_points || [])
+      .map(pointForMode)
+      .filter((point) => point && Number.isFinite(point.forward) && Number.isFinite(point.lateral));
+    const style = item.style || {};
+    const color = style.color || "#27ae60";
+    drawRibbon(rightPoints, leftPoints, style);
+    drawSamples([...rightPoints, ...leftPoints], color);
+    drawLabel([...rightPoints, ...leftPoints], layerLabel(layer, item), color);
+    return;
+  }
   if (item.type !== "polyline") return;
   const points = itemPoints(item);
   const style = item.style || {};
