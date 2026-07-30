@@ -905,7 +905,6 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             auto it = point_sets.find(decision.raw_ft_id);
             if (it == point_sets.end() || it->second.empty()) continue;
             Json points = it->second;
-            Json point_items = points;
             const std::string color = rawFtStateColor(decision.state);
             layer["items"].push_back({
                 {"type", "polyline"},
@@ -923,17 +922,6 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                     {"reason", decision.reason},
                     {"sample_count", decision.sample_count},
                     {"support_length_m", decision.support_length_m}}}});
-            layer["items"].push_back({
-                {"type", "points"},
-                {"id", "raw_ft_filter_points_" + std::to_string(decision.raw_ft_id)},
-                {"name", decision.debug_label + " " + decision.state + " nodes"},
-                {"points", std::move(point_items)},
-                {"style", {{"color", color}, {"radius_px", 3.4}}},
-                {"properties", {
-                    {"source", "raw_ft_filter_builder"},
-                    {"raw_ft_id", decision.raw_ft_id},
-                    {"state", decision.state},
-                    {"reason", decision.reason}}}});
         }
         return layer;
     };
