@@ -80,6 +80,64 @@ std::vector<std::uint32_t> pruneShortIncidentConnectors(
     return result;
 }
 
+void updateSolvedJunctionPoint(
+    BoundaryJunctionRelation* relation,
+    const std::vector<BoundaryJunctionBoundary>& boundaries) {
+    if (relation == nullptr) return;
+    const auto applySample = [&](std::uint32_t boundary_id, bool front) {
+        if (boundary_id >= boundaries.size() || boundaries[boundary_id].samples.empty()) {
+            return false;
+        }
+        const auto& samples = boundaries[boundary_id].samples;
+        const auto& sample = front ? samples.front() : samples.back();
+        relation->s_m = sample.s_m;
+        relation->l_m = sample.l_m;
+        return true;
+    };
+    if (relation->type == "split") {
+        if (!relation->incoming_boundary_ids.empty() &&
+            applySample(relation->incoming_boundary_ids.front(), false)) {
+            return;
+        }
+        if (!relation->outgoing_boundary_ids.empty()) {
+            applySample(relation->outgoing_boundary_ids.front(), true);
+        }
+        return;
+    }
+    if (relation->type == "merge") {
+        if (!relation->outgoing_boundary_ids.empty() &&
+            applySample(relation->outgoing_boundary_ids.front(), true)) {
+            return;
+        }
+        if (!relation->incoming_boundary_ids.empty()) {
+            applySample(relation->incoming_boundary_ids.front(), false);
+        }
+        return;
+    }
+
+    double sum_s = 0.0;
+    double sum_l = 0.0;
+    int count = 0;
+    for (std::uint32_t boundary_id : relation->incoming_boundary_ids) {
+        if (boundary_id >= boundaries.size() || boundaries[boundary_id].samples.empty()) continue;
+        const auto& sample = boundaries[boundary_id].samples.back();
+        sum_s += sample.s_m;
+        sum_l += sample.l_m;
+        ++count;
+    }
+    for (std::uint32_t boundary_id : relation->outgoing_boundary_ids) {
+        if (boundary_id >= boundaries.size() || boundaries[boundary_id].samples.empty()) continue;
+        const auto& sample = boundaries[boundary_id].samples.front();
+        sum_s += sample.s_m;
+        sum_l += sample.l_m;
+        ++count;
+    }
+    if (count > 0) {
+        relation->s_m = sum_s / static_cast<double>(count);
+        relation->l_m = sum_l / static_cast<double>(count);
+    }
+}
+
 BoundaryJunctionBoundary makeBoundary(
     std::uint32_t boundary_id,
     const std::vector<std::uint64_t>& chain,
@@ -267,6 +325,7 @@ BoundaryJunctionGraphOutput BoundaryJunctionGraphBuilder::build(
         relation.type = classifySolvedJunction(relation.incoming_boundary_ids.size(),
                                                relation.outgoing_boundary_ids.size(),
                                                candidate.type);
+        updateSolvedJunctionPoint(&relation, output.boundaries);
         relation.evidence.push_back("boundary_junction_graph_port_solver");
         relation.evidence = sortedUnique(std::move(relation.evidence));
         output.junctions.push_back(std::move(relation));
