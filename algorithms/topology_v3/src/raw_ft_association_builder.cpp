@@ -27,6 +27,14 @@ struct EndpointEvidence {
     double width_m = 0.0;
 };
 
+bool sameSliceEndpointTouch(const FrenetSliceIntersectionNode& tail,
+                            const FrenetSliceIntersectionNode& head,
+                            const RawFtAssociationBuilder::Config& cfg) {
+    return head.slice_index == tail.slice_index &&
+           std::abs(head.s_m - tail.s_m) <= cfg.max_endpoint_touch_gap_m &&
+           std::abs(head.l_m - tail.l_m) <= cfg.max_endpoint_touch_l_delta_m;
+}
+
 bool laneLine(const std::string& semantic_type) {
     return semantic_type == "lane_line";
 }
@@ -181,6 +189,18 @@ RawFtAssociationOutput RawFtAssociationBuilder::build(
                     candidate.reasons.push_back("shared_endpoint_ribbon_anchor");
                     candidates.push_back(std::move(candidate));
                 }
+            }
+            if (sameSliceEndpointTouch(tail, head, cfg_)) {
+                RawFtAssociationCandidate candidate;
+                candidate.from_raw_ft_id = from_id;
+                candidate.to_raw_ft_id = to_id;
+                candidate.gap_m = gap;
+                candidate.endpoint_l_delta_m = endpoint_delta;
+                candidate.width_delta_m = 0.0;
+                candidate.score = endpoint_delta;
+                candidate.classification = "continuation_candidate";
+                candidate.reasons.push_back("same_slice_endpoint_touch");
+                candidates.push_back(std::move(candidate));
             }
         }
     }

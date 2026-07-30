@@ -11,6 +11,8 @@ public:
         double max_association_near_gap_m = 0.5;
         double max_endpoint_l_delta_m = 2.0;
         double max_width_delta_m = 1.2;
+        double max_endpoint_touch_gap_m = 0.5;
+        double max_endpoint_touch_l_delta_m = 0.5;
     };
 
     RawFtAssociationOutput build(
