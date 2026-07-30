@@ -19,7 +19,6 @@ public:
         double max_corridor_support_width_m = 7.0;
         double max_support_width_span_m = 0.75;
         double min_passive_support_length_m = 20.0;
-        double max_repair_extrapolation_m = 35.0;
         int max_repair_iterations = 80;
     };
 

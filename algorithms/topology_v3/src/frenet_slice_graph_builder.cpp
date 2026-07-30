@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -253,22 +254,25 @@ public:
         return result;
     }
 
-    double nearestObservedDistance(std::uint64_t final_ft_id, double target_s_m) const {
-        double best = -1.0;
-        for (const auto& node_ref : output_->nodes) {
-            if (node_ref.final_ft_id != final_ft_id || node_ref.state != "observed") continue;
-            const double distance = std::abs(node_ref.s_m - target_s_m);
-            if (best < 0.0 || distance < best) best = distance;
-        }
-        return best;
-    }
-
 private:
     FrenetSliceGraphOutput* output_ = nullptr;
     std::uint64_t next_node_id_ = 1;
     std::uint64_t next_link_id_ = 1;
     std::map<std::pair<std::uint64_t, int>, std::uint64_t> node_by_ft_slice_;
 };
+
+std::optional<double> predictBySelfTrend(const GraphWork& graph,
+                                         const FrenetSliceGraphNode& node,
+                                         bool forward,
+                                         double target_s_m) {
+    const auto* opposite = graph.linkedNeighbor(node.node_id, !forward);
+    if (!opposite) return std::nullopt;
+    const double ds = node.s_m - opposite->s_m;
+    if (std::abs(ds) < 1e-6) return std::nullopt;
+    const double slope = (node.l_m - opposite->l_m) / ds;
+    const double predicted_l = node.l_m + slope * (target_s_m - node.s_m);
+    return std::isfinite(predicted_l) ? std::optional<double>(predicted_l) : std::nullopt;
+}
 
 struct Support {
     const FrenetSliceGraphNode* current = nullptr;
@@ -399,6 +403,22 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
                 continue;
             }
 
+            const double target_s = intersections.slices[static_cast<std::size_t>(target_slice)].s_m;
+            const auto self_prediction = predictBySelfTrend(graph, *node, forward, target_s);
+            if (self_prediction) {
+                const auto self_near_nodes = nearNodes(graph, *node, target_slice,
+                                                       *self_prediction, cfg_);
+                if (!self_near_nodes.empty()) {
+                    for (std::uint64_t near_id : self_near_nodes) {
+                        graph.addLonLink(forward ? node_id : near_id,
+                                         forward ? near_id : node_id,
+                                         "near_topology", 0.8,
+                                         "lonlink_repair_self_trend_near_topology_stop");
+                    }
+                    continue;
+                }
+            }
+
             const auto supports = adjacentSupports(graph, *node, forward, cfg_);
             if (supports.empty()) continue;
             const auto& support = supports.front();
@@ -420,11 +440,6 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
                 continue;
             }
 
-            const double target_s = intersections.slices[static_cast<std::size_t>(target_slice)].s_m;
-            const double observed_distance = graph.nearestObservedDistance(node->final_ft_id, target_s);
-            if (observed_distance < 0.0 || observed_distance > cfg_.max_repair_extrapolation_m) {
-                continue;
-            }
             const std::uint64_t inferred_id = graph.addInferredNode(
                 *node, target_slice, target_s, predicted_l, *support.next, support.width_m,
                 "lonlink_repair_lateral_support");

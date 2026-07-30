@@ -1033,7 +1033,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                 {"type", "polyline"},
                 {"id", "frenet_slice_graph_lon_" + std::to_string(link.link_id)},
                 {"name", nodeLabel(link.from_node_id) + " -> " +
-                         nodeLabel(link.to_node_id) + " " + link.kind},
+                         nodeLabel(link.to_node_id)},
                 {"points", Json::array({nodePoint(link.from_node_id), nodePoint(link.to_node_id)})},
                 {"style", {
                     {"color", linkColor(link.kind)},
@@ -1050,7 +1050,7 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         for (const auto& node : result.nodes) {
             if (node.state != "inferred") continue;
             Json point = {{"s_m", node.s_m}, {"l_m", node.l_m}};
-            point["name"] = node.debug_label + " inferred";
+            point["name"] = node.debug_label + "@" + std::to_string(node.slice_index);
             point["support_node_id"] = node.reconstruction_support_node_id;
             point["width_m"] = node.reconstruction_width_m;
             inferred_points.push_back(std::move(point));
