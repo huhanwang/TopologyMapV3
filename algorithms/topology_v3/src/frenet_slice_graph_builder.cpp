@@ -403,7 +403,7 @@ struct Support {
     const FrenetSliceGraphNode* next = nullptr;
     double width_m = 0.0;
     bool support_is_left = false;
-    bool junction_probe = false;
+    bool narrow_support = false;
 };
 
 bool passiveAdjacentLaneLineClear(const GraphWork& graph,
@@ -439,7 +439,9 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
                         inherited_next,
                         node.l_m - inherited->l_m,
                         inherited->l_m > node.l_m,
-                        width <= cfg.max_junction_probe_width_m});
+                        laneLine(node.semantic_type) &&
+                            laneLine(inherited->semantic_type) &&
+                            width < cfg.min_stable_ribbon_width_m});
                     return result;
                 }
             }
@@ -456,7 +458,9 @@ std::vector<Support> adjacentSupports(const GraphWork& graph,
         if (!supportAllowedForNode(node, width, cfg)) continue;
         result.push_back({candidate, next, node.l_m - candidate->l_m,
                           candidate->l_m > node.l_m,
-                          width <= cfg.max_junction_probe_width_m});
+                          laneLine(node.semantic_type) &&
+                              laneLine(candidate->semantic_type) &&
+                              width < cfg.min_stable_ribbon_width_m});
     }
     std::sort(result.begin(), result.end(), [&](const auto& a, const auto& b) {
         if (a.support_is_left != b.support_is_left) return a.support_is_left > b.support_is_left;
@@ -629,8 +633,8 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
             const auto supports = adjacentSupports(graph, *node, forward, cfg_);
             if (supports.empty()) continue;
             const auto& support = supports.front();
-            if (support.junction_probe && !self_prediction) continue;
-            const double predicted_l = support.junction_probe
+            if (support.narrow_support && !self_prediction) continue;
+            const double predicted_l = support.narrow_support
                 ? *self_prediction
                 : support.next->l_m + support.width_m;
             const auto near_nodes = nearNodes(graph, *node, target_slice, predicted_l, cfg_);
@@ -647,12 +651,12 @@ FrenetSliceGraphOutput FrenetSliceGraphBuilder::build(
 
             const std::uint64_t inferred_id = graph.addInferredNode(
                 *node, target_slice, target_s, predicted_l, *support.next, support.width_m,
-                support.junction_probe ? "lonlink_repair_self_trend_narrow_support"
+                support.narrow_support ? "lonlink_repair_self_trend_narrow_support"
                                        : "lonlink_repair_lateral_support");
             graph.addLonLink(forward ? node_id : inferred_id,
                              forward ? inferred_id : node_id,
                              "inferred", 0.8,
-                             support.junction_probe ? "lonlink_repair_self_trend_narrow_support"
+                             support.narrow_support ? "lonlink_repair_self_trend_narrow_support"
                                                     : "lonlink_repair_lateral_support");
             changed = true;
         }
