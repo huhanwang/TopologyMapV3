@@ -15,6 +15,7 @@ public:
         double max_replacement_ribbon_width_m = 5.5;
         double near_node_distance_m = 0.5;
         double min_stable_ribbon_width_m = 2.7;
+        double max_junction_probe_width_m = 0.8;
         double max_stable_ribbon_width_m = 4.8;
         double max_corridor_support_width_m = 7.0;
         double max_support_width_span_m = 0.75;
