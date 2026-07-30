@@ -590,6 +590,47 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"hard_rejected_count", result.hard_rejected_count},
             {"boundaries", std::move(boundaries)}};
     };
+    const auto frenetSliceIntersectionsToJson = [](const auto& result) {
+        Json slices = Json::array();
+        for (const auto& slice : result.slices) {
+            Json nodes = Json::array();
+            for (const auto& node : slice.nodes) {
+                Json node_json = {
+                    {"node_id", node.node_id},
+                    {"raw_ft_id", node.raw_ft_id},
+                    {"debug_label", node.debug_label},
+                    {"slice_index", node.slice_index},
+                    {"s_m", node.s_m},
+                    {"l_m", node.l_m},
+                    {"x_vcs_m", node.x_vcs_m},
+                    {"y_vcs_m", node.y_vcs_m},
+                    {"confidence", node.confidence},
+                    {"semantic_type", node.semantic_type},
+                    {"source_line_ids", node.source_line_ids}};
+                if (std::isfinite(node.x_smooth_m) && std::isfinite(node.y_smooth_m)) {
+                    node_json["x_smooth_m"] = node.x_smooth_m;
+                    node_json["y_smooth_m"] = node.y_smooth_m;
+                }
+                nodes.push_back(std::move(node_json));
+            }
+            slices.push_back({
+                {"slice_index", slice.slice_index},
+                {"s_m", slice.s_m},
+                {"origin_x_vcs_m", slice.origin_x_vcs_m},
+                {"origin_y_vcs_m", slice.origin_y_vcs_m},
+                {"normal_x", slice.normal_x},
+                {"normal_y", slice.normal_y},
+                {"node_count", slice.nodes.size()},
+                {"nodes", std::move(nodes)}});
+        }
+        return Json{
+            {"schema_version", "topology-map-v3.frenet-slice-intersections.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"slice_count", result.slices.size()},
+            {"node_count", result.node_count},
+            {"slices", std::move(slices)}};
+    };
     const auto rawRibbonGraphToJson = [](const auto& result) {
         Json relations = Json::array();
         for (const auto& relation : result.lateral_relations) {
@@ -782,6 +823,65 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
+    const auto frenetSliceIntersectionsLayer = [&boundaryColor](const auto& result) {
+        Json layer = {
+            {"id", "frenet_slice_intersections"},
+            {"name", "Frenet slice intersections"},
+            {"visible", false},
+            {"modes", {"frenet"}},
+            {"items", Json::array()}};
+        if (!result.ok) return layer;
+
+        for (const auto& slice : result.slices) {
+            if (slice.nodes.empty()) continue;
+            layer["items"].push_back({
+                {"type", "polyline"},
+                {"id", "frenet_slice_normal_" + std::to_string(slice.slice_index)},
+                {"name", "S" + std::to_string(slice.slice_index)},
+                {"points", Json::array({
+                    {{"s_m", slice.s_m}, {"l_m", -40.0}},
+                    {{"s_m", slice.s_m}, {"l_m", 40.0}}})},
+                {"style", {{"color", "#3a444d"}, {"width", 0.025}, {"dash", true}}},
+                {"properties", {
+                    {"source", "frenet_slice_intersection_builder"},
+                    {"slice_index", slice.slice_index},
+                    {"node_count", slice.nodes.size()}}}});
+        }
+
+        std::map<std::uint64_t, Json> point_sets;
+        std::map<std::uint64_t, std::string> labels;
+        std::map<std::uint64_t, std::string> semantic_types;
+        for (const auto& slice : result.slices) {
+            for (const auto& node : slice.nodes) {
+                if (point_sets.find(node.raw_ft_id) == point_sets.end()) {
+                    point_sets[node.raw_ft_id] = Json::array();
+                }
+                point_sets[node.raw_ft_id].push_back({{"s_m", node.s_m}, {"l_m", node.l_m}});
+                labels[node.raw_ft_id] = node.debug_label;
+                semantic_types[node.raw_ft_id] = node.semantic_type;
+            }
+        }
+        for (auto& [raw_ft_id, points] : point_sets) {
+            if (points.empty()) continue;
+            const auto semantic_it = semantic_types.find(raw_ft_id);
+            const std::string semantic =
+                semantic_it == semantic_types.end() ? "" : semantic_it->second;
+            layer["items"].push_back({
+                {"type", "polyline"},
+                {"id", "frenet_slice_nodes_" + std::to_string(raw_ft_id)},
+                {"name", labels[raw_ft_id]},
+                {"points", std::move(points)},
+                {"style", {
+                    {"color", boundaryColor(semantic)},
+                    {"width", 0.10},
+                    {"dash", false}}},
+                {"properties", {
+                    {"source", "frenet_slice_intersection_builder"},
+                    {"raw_ft_id", raw_ft_id},
+                    {"semantic_type", semantic}}}});
+        }
+        return layer;
+    };
     const auto rawRibbonGraphLayer = [&ribbonColor](const auto& result) {
         Json layer = {
             {"id", "raw_ribbon_graph"},
@@ -842,12 +942,15 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"fused_reference", fusedReferenceToJson(output.fused_reference)},
         {"raw_visual_preprocess", rawVisualPreprocessToJson(output.raw_visual_preprocess)},
         {"raw_boundary_evidence", rawBoundaryEvidenceToJson(output.raw_boundary_evidence)},
+        {"frenet_slice_intersections",
+         frenetSliceIntersectionsToJson(output.frenet_slice_intersections)},
         {"raw_ribbon_graph", rawRibbonGraphToJson(output.raw_ribbon_graph)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),
                         rawVisualPreprocessLayer(output.raw_visual_preprocess),
                         rawBoundaryEvidenceLayer(output.raw_boundary_evidence),
+                        frenetSliceIntersectionsLayer(output.frenet_slice_intersections),
                         rawRibbonGraphLayer(output.raw_ribbon_graph)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};

@@ -1,5 +1,6 @@
 add_library(topology_v3_core STATIC
     src/fused_reference_builder.cpp
+    src/frenet_slice_intersection_builder.cpp
     src/geometry/frenet_projector.cpp
     src/navigation_reference_builder.cpp
     src/raw_visual_boundary_preprocessor.cpp

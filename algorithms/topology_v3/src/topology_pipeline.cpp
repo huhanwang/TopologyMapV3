@@ -14,6 +14,10 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
     output.raw_boundary_evidence =
         raw_boundary_evidence_builder_.build(output.raw_visual_preprocess, output.fused_reference,
                                              input.smooth_pose ? &*input.smooth_pose : nullptr);
+    output.frenet_slice_intersections =
+        frenet_slice_intersection_builder_.build(output.raw_visual_preprocess,
+                                                 output.fused_reference,
+                                                 input.smooth_pose ? &*input.smooth_pose : nullptr);
     output.raw_ribbon_graph =
         raw_ribbon_graph_builder_.build(output.raw_boundary_evidence);
 
@@ -47,6 +51,12 @@ TopologyFrameOutput TopologyPipeline::update(const ReplayFrameInput& input) {
         output.raw_boundary_evidence.ok,
         {output.raw_boundary_evidence.ok ? "raw boundary evidence generated"
                                          : output.raw_boundary_evidence.error}});
+    output.debug_layers.push_back({
+        "frenet_slice_intersections",
+        "frenet_slice_intersections",
+        output.frenet_slice_intersections.ok,
+        {output.frenet_slice_intersections.ok ? "frenet slice intersections generated"
+                                              : output.frenet_slice_intersections.error}});
     output.debug_layers.push_back({
         "raw_ribbon_graph",
         "raw_ribbon_graph",
