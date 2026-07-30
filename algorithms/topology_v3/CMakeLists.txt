@@ -1,4 +1,5 @@
 add_library(topology_v3_core STATIC
+    src/boundary_junction_graph_builder.cpp
     src/fused_reference_builder.cpp
     src/frenet_slice_graph_builder.cpp
     src/frenet_slice_intersection_builder.cpp

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "topology_v3/frame_types.h"
+#include "topology_v3/stages/boundary_junction_graph_builder.h"
 #include "topology_v3/stages/boundary_resegmenter.h"
 #include "topology_v3/stages/fused_reference_builder.h"
 #include "topology_v3/stages/frenet_observation/frenet_slice_graph_builder.h"
@@ -39,6 +40,7 @@ private:
     LonLinkRepairer lonlink_repairer_;
     KeySliceGraphBuilder key_slice_graph_builder_;
     JunctionEvidenceCompiler junction_evidence_compiler_;
+    BoundaryJunctionGraphBuilder boundary_junction_graph_builder_;
     BoundaryResegmenter boundary_resegmenter_;
     SingleFramePropagator single_frame_propagator_;
     StatefulSmoothTopologyTracker smooth_topology_tracker_;

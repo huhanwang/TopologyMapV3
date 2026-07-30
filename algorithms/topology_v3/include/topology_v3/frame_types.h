@@ -440,6 +440,57 @@ struct JunctionEvidenceOutput {
     std::vector<JunctionCandidate> rejected;
 };
 
+struct BoundaryJunctionGraphSample {
+    std::uint64_t node_id = 0;
+    std::uint64_t raw_ft_id = 0;
+    std::uint64_t final_ft_id = 0;
+    std::string source_debug_label;
+    int slice_index = -1;
+    double s_m = 0.0;
+    double l_m = 0.0;
+    std::string state;
+    std::string provenance;
+    std::string semantic_type;
+};
+
+struct BoundaryJunctionBoundary {
+    std::uint32_t boundary_id = 0;
+    std::string debug_label;
+    std::vector<std::uint64_t> node_ids;
+    std::vector<std::uint64_t> raw_ft_ids;
+    std::vector<std::uint64_t> final_ft_ids;
+    std::vector<std::string> source_debug_labels;
+    std::vector<BoundaryJunctionGraphSample> samples;
+    double s_begin_m = 0.0;
+    double s_end_m = 0.0;
+    double length_m = 0.0;
+    int observed_sample_count = 0;
+    int inferred_sample_count = 0;
+    bool starts_at_junction = false;
+    bool ends_at_junction = false;
+};
+
+struct BoundaryJunctionRelation {
+    std::uint64_t relation_id = 0;
+    std::uint64_t junction_candidate_id = 0;
+    std::string type;
+    double s_m = 0.0;
+    double l_m = 0.0;
+    std::vector<std::uint32_t> incoming_boundary_ids;
+    std::vector<std::uint32_t> outgoing_boundary_ids;
+    std::vector<std::uint64_t> node_ids;
+    std::vector<std::uint64_t> final_ft_ids;
+    double confidence = 0.0;
+    std::vector<std::string> evidence;
+};
+
+struct BoundaryJunctionGraphOutput {
+    bool ok = false;
+    std::string error;
+    std::vector<BoundaryJunctionBoundary> boundaries;
+    std::vector<BoundaryJunctionRelation> junctions;
+};
+
 struct ResegmentedBoundaryOutput {
     bool ok = false;
     std::string error;
@@ -517,6 +568,7 @@ struct TopologyFrameOutput {
     LonLinkRepairOutput lonlink_repair;
     KeySliceGraphOutput key_slice_graph;
     JunctionEvidenceOutput junction_evidence;
+    BoundaryJunctionGraphOutput boundary_junction_graph;
     ResegmentedBoundaryOutput resegmented_boundaries;
     SingleFramePropagationOutput single_frame_propagation;
     SmoothTopologyOutput smooth_topology;

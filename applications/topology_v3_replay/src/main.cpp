@@ -779,6 +779,63 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
             {"candidates", candidatesToJson(result.candidates)},
             {"rejected", candidatesToJson(result.rejected)}};
     };
+    const auto boundaryJunctionGraphToJson = [](const auto& result) {
+        Json boundaries = Json::array();
+        for (const auto& boundary : result.boundaries) {
+            Json samples = Json::array();
+            for (const auto& sample : boundary.samples) {
+                samples.push_back({
+                    {"node_id", sample.node_id},
+                    {"raw_ft_id", sample.raw_ft_id},
+                    {"final_ft_id", sample.final_ft_id},
+                    {"source_debug_label", sample.source_debug_label},
+                    {"slice_index", sample.slice_index},
+                    {"s_m", sample.s_m},
+                    {"l_m", sample.l_m},
+                    {"state", sample.state},
+                    {"provenance", sample.provenance},
+                    {"semantic_type", sample.semantic_type}});
+            }
+            boundaries.push_back({
+                {"boundary_id", boundary.boundary_id},
+                {"debug_label", boundary.debug_label},
+                {"node_ids", boundary.node_ids},
+                {"raw_ft_ids", boundary.raw_ft_ids},
+                {"final_ft_ids", boundary.final_ft_ids},
+                {"source_debug_labels", boundary.source_debug_labels},
+                {"s_begin_m", boundary.s_begin_m},
+                {"s_end_m", boundary.s_end_m},
+                {"length_m", boundary.length_m},
+                {"observed_sample_count", boundary.observed_sample_count},
+                {"inferred_sample_count", boundary.inferred_sample_count},
+                {"starts_at_junction", boundary.starts_at_junction},
+                {"ends_at_junction", boundary.ends_at_junction},
+                {"samples", std::move(samples)}});
+        }
+        Json junctions = Json::array();
+        for (const auto& junction : result.junctions) {
+            junctions.push_back({
+                {"relation_id", junction.relation_id},
+                {"junction_candidate_id", junction.junction_candidate_id},
+                {"type", junction.type},
+                {"s_m", junction.s_m},
+                {"l_m", junction.l_m},
+                {"incoming_boundary_ids", junction.incoming_boundary_ids},
+                {"outgoing_boundary_ids", junction.outgoing_boundary_ids},
+                {"node_ids", junction.node_ids},
+                {"final_ft_ids", junction.final_ft_ids},
+                {"confidence", junction.confidence},
+                {"evidence", junction.evidence}});
+        }
+        return Json{
+            {"schema_version", "topology-map-v3.boundary-junction-graph.v1"},
+            {"ok", result.ok},
+            {"error", result.error},
+            {"boundary_count", result.boundaries.size()},
+            {"junction_count", result.junctions.size()},
+            {"boundaries", std::move(boundaries)},
+            {"junctions", std::move(junctions)}};
+    };
     const auto boundaryColor = [](const std::string& semantic_type) {
         if (semantic_type == "curb") return "#eb5757";
         if (semantic_type == "road_edge") return "#f2994a";
@@ -1267,6 +1324,113 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         }
         return layer;
     };
+    const auto boundaryJunctionGraphLayer = [&boundaryColor](const auto& result) {
+        Json layer = {
+            {"id", "boundary_junction_graph"},
+            {"name", "Boundary junction graph"},
+            {"visible", false},
+            {"modes", {"frenet"}},
+            {"items", Json::array()}};
+        if (!result.ok) return layer;
+
+        const auto junctionColor = [](const std::string& type) {
+            if (type == "split") return "#00d084";
+            if (type == "merge") return "#2d9cdb";
+            if (type == "complex") return "#9b51e0";
+            return "#f2c94c";
+        };
+        const auto boundaryPoint = [&](std::uint32_t boundary_id, bool front) {
+            if (boundary_id >= result.boundaries.size() ||
+                result.boundaries[boundary_id].samples.empty()) {
+                return Json{};
+            }
+            const auto& samples = result.boundaries[boundary_id].samples;
+            const auto& sample = front ? samples.front() : samples.back();
+            return Json{{"s_m", sample.s_m}, {"l_m", sample.l_m}};
+        };
+
+        for (const auto& boundary : result.boundaries) {
+            if (boundary.samples.empty()) continue;
+            Json points = Json::array();
+            std::string semantic;
+            for (const auto& sample : boundary.samples) {
+                points.push_back({{"s_m", sample.s_m}, {"l_m", sample.l_m}});
+                if (semantic.empty()) semantic = sample.semantic_type;
+            }
+            layer["items"].push_back({
+                {"type", "polyline"},
+                {"id", "boundary_junction_graph_boundary_" +
+                         std::to_string(boundary.boundary_id)},
+                {"name", boundary.debug_label},
+                {"points", std::move(points)},
+                {"style", {
+                    {"color", boundaryColor(semantic)},
+                    {"width", 0.13},
+                    {"dash", boundary.inferred_sample_count > boundary.observed_sample_count}}},
+                {"properties", {
+                    {"source", "boundary_junction_graph_builder"},
+                    {"boundary_id", boundary.boundary_id},
+                    {"raw_ft_ids", boundary.raw_ft_ids},
+                    {"final_ft_ids", boundary.final_ft_ids},
+                    {"source_debug_labels", boundary.source_debug_labels},
+                    {"starts_at_junction", boundary.starts_at_junction},
+                    {"ends_at_junction", boundary.ends_at_junction},
+                    {"observed_sample_count", boundary.observed_sample_count},
+                    {"inferred_sample_count", boundary.inferred_sample_count}}}});
+        }
+
+        for (const auto& junction : result.junctions) {
+            const std::string color = junctionColor(junction.type);
+            Json point = {
+                {"s_m", junction.s_m},
+                {"l_m", junction.l_m},
+                {"name", junction.type + " J" +
+                         std::to_string(junction.junction_candidate_id)}};
+            layer["items"].push_back({
+                {"type", "points"},
+                {"id", "boundary_junction_graph_junction_" +
+                         std::to_string(junction.relation_id)},
+                {"name", junction.type + " J" +
+                         std::to_string(junction.junction_candidate_id)},
+                {"points", Json::array({point})},
+                {"style", {{"color", color}, {"radius_px", 7.0}}},
+                {"properties", {
+                    {"source", "boundary_junction_graph_builder"},
+                    {"relation_id", junction.relation_id},
+                    {"junction_candidate_id", junction.junction_candidate_id},
+                    {"incoming_boundary_ids", junction.incoming_boundary_ids},
+                    {"outgoing_boundary_ids", junction.outgoing_boundary_ids},
+                    {"confidence", junction.confidence}}}});
+
+            for (std::uint32_t boundary_id : junction.incoming_boundary_ids) {
+                layer["items"].push_back({
+                    {"type", "polyline"},
+                    {"id", "boundary_junction_graph_in_" +
+                             std::to_string(junction.relation_id) + "_" +
+                             std::to_string(boundary_id)},
+                    {"name", "B" + std::to_string(boundary_id) + " -> J"},
+                    {"points", Json::array({
+                        boundaryPoint(boundary_id, false),
+                        Json{{"s_m", junction.s_m}, {"l_m", junction.l_m}}})},
+                    {"style", {{"color", color}, {"width", 0.08}, {"dash", true}}},
+                    {"properties", {{"source", "boundary_junction_graph_builder"}}}});
+            }
+            for (std::uint32_t boundary_id : junction.outgoing_boundary_ids) {
+                layer["items"].push_back({
+                    {"type", "polyline"},
+                    {"id", "boundary_junction_graph_out_" +
+                             std::to_string(junction.relation_id) + "_" +
+                             std::to_string(boundary_id)},
+                    {"name", "J -> B" + std::to_string(boundary_id)},
+                    {"points", Json::array({
+                        Json{{"s_m", junction.s_m}, {"l_m", junction.l_m}},
+                        boundaryPoint(boundary_id, true)})},
+                    {"style", {{"color", color}, {"width", 0.08}, {"dash", true}}},
+                    {"properties", {{"source", "boundary_junction_graph_builder"}}}});
+            }
+        }
+        return layer;
+    };
     return {
         {"frame_id", input.frame_id},
         {"timestamp_us", input.timestamp_us},
@@ -1287,6 +1451,8 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
         {"raw_ft_association", rawFtAssociationToJson(output.raw_ft_association)},
         {"frenet_slice_graph", frenetSliceGraphToJson(output.frenet_slice_graph)},
         {"junction_evidence", junctionEvidenceToJson(output.junction_evidence)},
+        {"boundary_junction_graph",
+         boundaryJunctionGraphToJson(output.boundary_junction_graph)},
         {"viz_layers", {visualReferenceLayer(output.visual_reference),
                         navigationReferenceLayer(output.navigation_reference),
                         fusedReferenceLayer(output.fused_reference),
@@ -1300,7 +1466,8 @@ Json outputToJson(const topology_map::topology_v3::ReplayFrameInput& input,
                                              output.frenet_slice_intersections),
                         frenetSliceGraphLayer(output.frenet_slice_graph),
                         junctionEvidenceLayer(output.junction_evidence,
-                                              output.frenet_slice_graph)}},
+                                              output.frenet_slice_graph),
+                        boundaryJunctionGraphLayer(output.boundary_junction_graph)}},
         {"debug_layers", std::move(layers)},
         {"diagnostics", output.diagnostics}};
 }
